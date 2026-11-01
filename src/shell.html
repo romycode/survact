@@ -8,12 +8,15 @@
   </header>
   <div class="stage"><canvas id="game"></canvas></div>
   <nav class="bar" aria-label="Controles">
-    <div class="tools">
-      <button type="button" data-key="Digit1" aria-pressed="true"><span class="sw wall"></span>Muro <small>$5</small><kbd>1</kbd></button>
-      <button type="button" data-key="Digit2" aria-pressed="false"><span class="sw turret"></span>Torreta <small>$25</small><kbd>2</kbd></button>
-      <button type="button" data-key="KeyX" aria-pressed="false"><span class="sw del"></span>Quitar<kbd>X</kbd></button>
+    <div class="tools build">
+      <button type="button" data-key="Digit3" aria-pressed="true"><span class="sw belt"></span><span>Cinta<small>$1</small></span><kbd>3</kbd></button>
+      <button type="button" data-key="Digit4" aria-pressed="false"><span class="sw miner"></span><span>Minero<small>$15</small></span><kbd>4</kbd></button>
+      <button type="button" data-key="Digit2" aria-pressed="false"><span class="sw turret"></span><span>Torreta<small>$25</small></span><kbd>2</kbd></button>
+      <button type="button" data-key="Digit1" aria-pressed="false"><span class="sw wall"></span><span>Muro<small>$5</small></span><kbd>1</kbd></button>
+      <button type="button" data-key="KeyX" aria-pressed="false"><span class="sw del"></span><span>Quitar<small>50%</small></span><kbd>X</kbd></button>
     </div>
-    <div class="tools">
+    <div class="tools actions">
+      <button type="button" class="rot" data-key="KeyE" aria-label="Girar"><b id="hud-dir">→</b><span>Girar</span><kbd>E</kbd></button>
       <button type="button" class="speed" data-key="KeyF" aria-label="Velocidad"><span id="hud-speed">x1</span><kbd>F</kbd></button>
       <button type="button" class="go" data-key="Space">Oleada<kbd>Espacio</kbd></button>
       <button type="button" class="go" data-key="KeyR" hidden>Reiniciar<kbd>R</kbd></button>

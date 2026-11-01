@@ -14,7 +14,7 @@ const host = canvas.parentElement!;
 
 let world = newWorld();
 const cam = new Camera();
-const ui: UiState = { tool: 'wall', hoverX: -1, hoverY: -1, speed: 1 };
+const ui: UiState = { tool: 'belt', hoverX: -1, hoverY: -1, speed: 1, dir: 0 };
 let cssW = 0;
 let cssH = 0;
 let dpr = 1;
@@ -42,7 +42,13 @@ function resize(): void {
 new ResizeObserver(resize).observe(host);
 resize();
 
-attachInput(canvas, cam, ui, (cmd) => pending.push(cmd));
+attachInput({
+  canvas,
+  cam,
+  ui,
+  emit: (cmd) => pending.push(cmd),
+  buildingAt: (x, y) => (world.grid.inBounds(x, y) ? world.grid.building[world.grid.idx(x, y)] : -1),
+});
 
 // ---------- Keyboard + on-screen buttons share one handler ----------
 function handleKey(code: string): boolean {
@@ -53,8 +59,17 @@ function handleKey(code: string): boolean {
     case 'Digit2':
       ui.tool = 'turret';
       break;
+    case 'Digit3':
+      ui.tool = 'belt';
+      break;
+    case 'Digit4':
+      ui.tool = 'miner';
+      break;
     case 'KeyX':
       ui.tool = 'remove';
+      break;
+    case 'KeyE':
+      ui.dir = (ui.dir + 1) & 3;
       break;
     case 'Space':
       pending.push({ type: 'startWave' });
@@ -103,20 +118,32 @@ const hud = {
   coreText: $('hud-core-text'),
   enemies: $('hud-enemies'),
   speed: $('hud-speed'),
+  dir: $('hud-dir'),
 };
 const coreMax = BUILDINGS[Building.Core].hp;
 const costOf: Record<string, number> = {
   Digit1: BUILDINGS[Building.Wall].cost,
   Digit2: BUILDINGS[Building.Turret].cost,
+  Digit3: BUILDINGS[Building.Belt].cost,
+  Digit4: BUILDINGS[Building.Miner].cost,
 };
-const toolOf: Record<string, UiState['tool']> = { Digit1: 'wall', Digit2: 'turret', KeyX: 'remove' };
+const toolOf: Record<string, UiState['tool']> = {
+  Digit1: 'wall',
+  Digit2: 'turret',
+  Digit3: 'belt',
+  Digit4: 'miner',
+  KeyX: 'remove',
+};
+// Sim dir -> arrow as seen on screen (portrait transposes the grid: E<->S, W<->N).
+const ARROWS = ['→', '↓', '←', '↑'];
+const screenArrow = (d: number): string => ARROWS[cam.rot ? [1, 0, 3, 2][d] : d];
 
 let lastSig = '';
 function syncHud(): void {
   const core = Math.max(0, Math.ceil(world.coreHp));
   const enemies =
     world.phase === 'build' ? `Siguiente: ${world.nextWaveSize}` : `Quedan: ${world.remaining}`;
-  const sig = [world.wave, world.money, core, enemies, ui.tool, ui.speed, world.phase].join('|');
+  const sig = [world.wave, world.money, core, enemies, ui.tool, ui.speed, ui.dir, cam.rot, world.phase].join('|');
   if (sig === lastSig) return;
   lastSig = sig;
 
@@ -126,6 +153,7 @@ function syncHud(): void {
   if (hud.coreText) hud.coreText.textContent = String(core);
   if (hud.enemies) hud.enemies.textContent = enemies;
   if (hud.speed) hud.speed.textContent = `x${ui.speed}`;
+  if (hud.dir) hud.dir.textContent = screenArrow(ui.dir);
 
   for (const b of buttons) {
     const k = b.dataset.key!;
@@ -156,3 +184,12 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+
+// Debug handle for the console / automated tests. Read-only by convention.
+(globalThis as unknown as { __survact: unknown }).__survact = {
+  get world() {
+    return world;
+  },
+  cam,
+  ui,
+};

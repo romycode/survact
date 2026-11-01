@@ -27,8 +27,13 @@ body { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color
 .meter i { display: block; height: 100%; width: 100%; background: var(--core); transition: width .15s; }
 #hud-enemies { color: var(--danger); font-weight: 500; }
 
-.bar { padding-block: 8px; justify-content: space-between; border-top: 1px solid var(--line); }
-.tools { display: flex; gap: 6px; flex-wrap: wrap; }
+.bar { padding-block: 8px; flex-direction: column; align-items: stretch; gap: 6px; border-top: 1px solid var(--line); }
+.tools.build button { flex: 1 1 0; min-width: 0; justify-content: center; padding: 0 6px; }
+.tools.build button > span:not(.sw) { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
+.tools.actions { justify-content: flex-end; }
+.tools.actions .go { flex: 1 1 auto; justify-content: center; max-width: 220px; }
+.rot b { font-size: 16px; color: var(--accent); }
+.tools { display: flex; gap: 6px; }
 .bar button {
   display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 12px;
   font: inherit; color: var(--fg); background: transparent;
@@ -47,5 +52,8 @@ body:not([data-phase="build"]) .tools button[aria-pressed] { opacity: .45; }
 .sw { width: 10px; height: 10px; flex: none; }
 .sw.wall { background: #6b7280; }
 .sw.turret { background: var(--accent); border-radius: 50%; }
+.sw.belt { background: repeating-linear-gradient(90deg, #3d4656 0 3px, #252b36 3px 5px); border: 1px solid #3d4656; }
+.sw.miner { background: #9c6b4a; }
 .sw.del { border: 1.5px solid var(--danger); }
 @media (hover: none) { .bar kbd { display: none; } }
+@media (max-width: 420px) { .tools.build .sw { display: none; } .bar button { font-size: 12px; } }

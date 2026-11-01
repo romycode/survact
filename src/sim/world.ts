@@ -2,7 +2,19 @@
 // Everything changes through apply(cmd) or tick(), so a run is reproducible
 // from (seed, command log) — useful for replays, debugging and tests.
 
-import { BUILDINGS, Building, ECONOMY, ENEMY, TURRET, waveSize } from './defs';
+import {
+  BELT,
+  BUILDINGS,
+  Building,
+  ECONOMY,
+  ENEMY,
+  Item,
+  MAP,
+  MINER,
+  TURRET,
+  waveSize,
+  type Placeable,
+} from './defs';
 import { FlowField, NO_NEXT } from './flowfield';
 import { Grid } from './grid';
 import { Rng } from './rng';
@@ -13,7 +25,9 @@ export const DT = 1 / TICK_RATE;
 export type Phase = 'build' | 'wave' | 'lost';
 
 export type Command =
-  | { type: 'place'; x: number; y: number; building: Exclude<Building, 0 | 1> }
+  | { type: 'place'; x: number; y: number; building: Placeable; dir?: number }
+  /** Set facing; without dir, rotate clockwise. */
+  | { type: 'rotate'; x: number; y: number; dir?: number }
   | { type: 'remove'; x: number; y: number }
   | { type: 'startWave' };
 
@@ -52,7 +66,6 @@ export class World {
   enemies: Enemy[] = [];
   shots: Shot[] = [];
 
-  readonly turretCd: Int32Array;
   readonly coreIdx: number;
 
   private flowVersion = -1;
@@ -68,10 +81,10 @@ export class World {
     this.grid = new Grid(w, h);
     this.flow = new FlowField(this.grid);
     this.rng = new Rng(seed);
-    this.turretCd = new Int32Array(w * h);
     this.bucketHead = new Int32Array(w * h);
 
     this.coreIdx = this.grid.idx(w - 3, h >> 1);
+    this.generateOre();
     this.grid.place(this.coreIdx, Building.Core);
     this.syncFlow();
   }
@@ -89,31 +102,39 @@ export class World {
     return waveSize(this.wave + 1);
   }
 
-  canPlace(x: number, y: number): boolean {
-    return (
-      this.phase === 'build' &&
-      this.grid.inBounds(x, y) &&
-      x > 0 && // column 0 is the spawn zone
-      this.grid.building[this.grid.idx(x, y)] === Building.None
-    );
+  canPlace(x: number, y: number, b: Placeable): boolean {
+    if (this.phase !== 'build' || !this.grid.inBounds(x, y) || x === 0) return false; // col 0 = spawn
+    const i = this.grid.idx(x, y);
+    if (this.grid.building[i] !== Building.None) return false;
+    if (b === Building.Miner && !this.grid.ore[i]) return false;
+    return true;
   }
 
   apply(cmd: Command): boolean {
+    const { grid } = this;
     switch (cmd.type) {
       case 'place': {
         const def = BUILDINGS[cmd.building];
-        if (!this.canPlace(cmd.x, cmd.y) || this.money < def.cost) return false;
+        if (!this.canPlace(cmd.x, cmd.y, cmd.building) || this.money < def.cost) return false;
         this.money -= def.cost;
-        this.grid.place(this.grid.idx(cmd.x, cmd.y), cmd.building);
+        grid.place(grid.idx(cmd.x, cmd.y), cmd.building, cmd.dir ?? 0);
+        return true;
+      }
+      case 'rotate': {
+        if (this.phase !== 'build' || !grid.inBounds(cmd.x, cmd.y)) return false;
+        const i = grid.idx(cmd.x, cmd.y);
+        const b = grid.building[i];
+        if (b === Building.None || !BUILDINGS[b as Exclude<Building, 0>].directed) return false;
+        grid.dir[i] = (cmd.dir ?? grid.dir[i] + 1) & 3;
         return true;
       }
       case 'remove': {
-        if (this.phase !== 'build' || !this.grid.inBounds(cmd.x, cmd.y)) return false;
-        const i = this.grid.idx(cmd.x, cmd.y);
-        const b = this.grid.building[i];
+        if (this.phase !== 'build' || !grid.inBounds(cmd.x, cmd.y)) return false;
+        const i = grid.idx(cmd.x, cmd.y);
+        const b = grid.building[i];
         if (b === Building.None || b === Building.Core) return false;
         this.money += Math.floor(BUILDINGS[b as Exclude<Building, 0>].cost / 2);
-        this.grid.remove(i);
+        grid.remove(i);
         return true;
       }
       case 'startWave': {
@@ -134,9 +155,13 @@ export class World {
       e.prevY = e.y;
     }
     this.updateShots();
+    // Build phase is paused planning: the factory only runs during the wave,
+    // so what counts is throughput under pressure, not a stockpile.
     if (this.phase !== 'wave') return;
 
     this.syncFlow();
+    this.runMiners();
+    this.runBelts();
     this.spawn();
     this.moveEnemies();
     this.rebuildBuckets();
@@ -160,6 +185,83 @@ export class World {
       this.flowVersion = this.grid.version;
     }
   }
+
+  // ---------------- Map ----------------
+
+  private generateOre(): void {
+    const { grid, rng } = this;
+    const cx0 = this.coreIdx % grid.w;
+    const cy0 = (this.coreIdx / grid.w) | 0;
+    // One guaranteed patch near the core, the rest anywhere past the spawn lane.
+    const centres: [number, number][] = [[cx0 - 5, cy0 + (rng.next() < 0.5 ? -3 : 3)]];
+    for (let k = 1; k < MAP.oreClusters; k++) {
+      centres.push([3 + rng.int(grid.w - 8), 1 + rng.int(grid.h - 2)]);
+    }
+    for (const [cx, cy] of centres) {
+      const r = 1.4 + rng.next() * 0.9;
+      for (let y = Math.floor(cy - r); y <= Math.ceil(cy + r); y++) {
+        for (let x = Math.floor(cx - r); x <= Math.ceil(cx + r); x++) {
+          if (!grid.inBounds(x, y) || x < 2) continue;
+          if (Math.hypot(x - cx, y - cy) > r || rng.next() > 0.85) continue;
+          const i = grid.idx(x, y);
+          if (i !== this.coreIdx) grid.ore[i] = 1;
+        }
+      }
+    }
+  }
+
+  // ---------------- Factory ----------------
+
+  /** Try to hand one item to tile t (coming from tile `from`). */
+  private accept(t: number, from: number, item: Item): boolean {
+    const { grid } = this;
+    if (t < 0) return false;
+    switch (grid.building[t]) {
+      case Building.Belt:
+        // Don't feed a belt head-on (it points back at us).
+        if (grid.item[t] !== Item.None || grid.step(t, grid.dir[t]) === from) return false;
+        grid.item[t] = item;
+        grid.itemProg[t] = 0;
+        return true;
+      case Building.Turret:
+        if (item !== Item.Ore || grid.ammo[t] + TURRET.shotsPerItem > TURRET.maxAmmo) return false;
+        grid.ammo[t] += TURRET.shotsPerItem;
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  private runMiners(): void {
+    const { grid } = this;
+    for (let i = 0; i < grid.building.length; i++) {
+      if (grid.building[i] !== Building.Miner) continue;
+      if (grid.cd[i] > 0) {
+        grid.cd[i]--;
+        continue;
+      }
+      // Holds the finished item until the output accepts it.
+      if (this.accept(grid.step(i, grid.dir[i]), i, Item.Ore)) grid.cd[i] = MINER.ticksPerItem;
+    }
+  }
+
+  private runBelts(): void {
+    const { grid } = this;
+    const end = BELT.ticksPerTile;
+    for (let i = 0; i < grid.building.length; i++) {
+      if (grid.building[i] !== Building.Belt || grid.item[i] === Item.None) continue;
+      if (grid.itemProg[i] < end) {
+        grid.itemProg[i]++;
+        continue;
+      }
+      if (this.accept(grid.step(i, grid.dir[i]), i, grid.item[i] as Item)) {
+        grid.item[i] = Item.None;
+        grid.itemProg[i] = 0;
+      }
+    }
+  }
+
+  // ---------------- Enemies ----------------
 
   private spawn(): void {
     if (this.toSpawn === 0) return;
@@ -190,7 +292,7 @@ export class World {
       const n = flow.next[e.tile];
       if (n === NO_NEXT) continue;
 
-      if (grid.building[n] !== Building.None) {
+      if (grid.isSolid(n)) {
         // Blocked: chew through whatever is in the way (core included).
         if (e.attackCd > 0) {
           e.attackCd--;
@@ -240,10 +342,11 @@ export class World {
 
     for (let i = 0; i < grid.building.length; i++) {
       if (grid.building[i] !== Building.Turret) continue;
-      if (this.turretCd[i] > 0) {
-        this.turretCd[i]--;
+      if (grid.cd[i] > 0) {
+        grid.cd[i]--;
         continue;
       }
+      if (grid.ammo[i] === 0) continue;
       const tx = i % grid.w;
       const ty = (i / grid.w) | 0;
       const cx = tx + 0.5;
@@ -272,7 +375,8 @@ export class World {
 
       const e = this.enemies[best];
       e.hp -= TURRET.damage;
-      this.turretCd[i] = TURRET.cooldownTicks;
+      grid.ammo[i]--;
+      grid.cd[i] = TURRET.cooldownTicks;
       this.shots.push({ fromX: cx, fromY: cy, toX: e.x, toY: e.y, ttl: 6 });
     }
   }
