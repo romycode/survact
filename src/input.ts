@@ -52,8 +52,8 @@ export function attachInput(d: InputDeps): void {
   const pts = new Map<number, { x: number; y: number }>();
   let mode: Mode = { kind: 'idle' };
 
-  /** During a wave you can't build: every tool behaves like Mover. */
-  const tool = (): Tool => (d.phase() === 'build' ? ui.tool : 'select');
+  /** After losing, every tool behaves like Mover. */
+  const tool = (): Tool => (d.phase() === 'lost' ? 'select' : ui.tool);
 
   const local = (e: PointerEvent | WheelEvent): [number, number] => {
     const r = canvas.getBoundingClientRect();

@@ -55,7 +55,9 @@ body { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color
 .bar .cancel { color: var(--danger); border-color: #e5484d66; min-width: 44px; justify-content: center; font-size: 16px; }
 .bar .go[data-key="KeyR"] { border-color: var(--danger); color: var(--danger); }
 .bar .speed { min-width: 52px; justify-content: center; font-variant-numeric: tabular-nums; }
-body:not([data-phase="build"]) .tools button[aria-pressed] { opacity: .45; }
+body[data-phase="lost"] .tools button[aria-pressed] { opacity: .45; }
+body[data-paused="true"] .stage { outline: 2px solid var(--accent); outline-offset: -2px; }
+body[data-paused="true"] [data-key="KeyP"] { border-color: var(--accent); color: var(--accent); }
 .sw { width: 10px; height: 10px; flex: none; }
 .sw.wall { background: #6b7280; }
 .sw.turret { background: var(--accent); border-radius: 50%; }

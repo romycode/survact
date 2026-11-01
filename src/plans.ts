@@ -55,7 +55,7 @@ export class Plans {
     for (const [k, p] of this.map) {
       if (p.kind !== 'remove') continue;
       const t = world.grid.get(k);
-      if (!t || t.b === Building.Core || world.phase !== 'build') {
+      if (!t || t.b === Building.Core || world.phase === 'lost') {
         bad++;
         continue;
       }

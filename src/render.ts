@@ -128,7 +128,7 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
       ctx.fillRect(x, y, 1.01, 1.01);
     }
   }
-  if (world.phase === 'build') {
+  if (world.phase !== 'lost') {
     const reach = reachSet(world);
     ctx.fillStyle = C.reach;
     for (let y = v.y0; y <= v.y1; y++) {
@@ -183,7 +183,7 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
   }
 
   // Predicted routes + spawn markers
-  if (world.phase === 'build') drawPaths(ctx, world);
+  if (world.phase !== 'lost') drawPaths(ctx, world);
   if (world.phase !== 'lost') {
     const pulse = 0.5 + 0.5 * Math.sin(world.tickCount / 10);
     ctx.strokeStyle = C.spawn;
@@ -196,7 +196,7 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
   }
 
   // Belts (flat) and their items
-  const phase = world.phase === 'wave' ? (world.tickCount % BELT.ticksPerTile) / BELT.ticksPerTile : 0;
+  const phase = (world.tickCount % BELT.ticksPerTile) / BELT.ticksPerTile;
   for (const [k, t] of grid.tiles) {
     if (t.b !== Building.Belt || !inView(k, v)) continue;
     const x = kx(k);
@@ -258,7 +258,7 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
     ctx.lineWidth = 2.5 * gpx;
     ctx.strokeRect(ui.sel[0] + 0.03, ui.sel[1] + 0.03, 0.94, 0.94);
   }
-  if (world.phase === 'build' && ui.hoverX !== NO_HOVER && ui.tool !== 'select') {
+  if (world.phase !== 'lost' && ui.hoverX !== NO_HOVER && ui.tool !== 'select') {
     const hx = ui.hoverX;
     const hy = ui.hoverY;
     const b = grid.building(key(hx, hy));

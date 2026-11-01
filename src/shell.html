@@ -5,7 +5,7 @@
     <span class="stat"><span class="sw iron"></span><b id="hud-iron">0</b><small>Hierro</small></span>
     <span class="stat"><span class="sw plate"></span><b id="hud-plate">0</b><small>Placas</small></span>
     <span class="stat core"><small>Núcleo</small><span class="meter"><i id="hud-core"></i></span><b id="hud-core-text">500</b></span>
-    <span class="stat"><b id="hud-enemies">Siguiente: 6</b></span>
+    <span class="stat"><b id="hud-enemies">Oleada 1 en 60s</b></span>
   </header>
   <div class="stage"><canvas id="game"></canvas></div>
   <nav class="bar" aria-label="Controles">
@@ -21,10 +21,11 @@
     <div class="tools actions">
       <button type="button" class="rot" data-key="KeyE" aria-label="Girar"><b id="hud-dir">↘</b><span>Girar</span><kbd>E</kbd></button>
       <button type="button" data-key="KeyC" aria-label="Centrar en el núcleo"><b class="ico">⌖</b><kbd>C</kbd></button>
+      <button type="button" class="speed" data-key="KeyP" aria-label="Pausa"><span id="hud-pause">⏸</span><kbd>P</kbd></button>
       <button type="button" class="speed" data-key="KeyF" aria-label="Velocidad"><span id="hud-speed">x1</span><kbd>F</kbd></button>
       <button type="button" class="cancel" data-key="Escape" hidden aria-label="Cancelar planos">✗<kbd>Esc</kbd></button>
       <button type="button" class="go confirm" data-key="Enter" hidden><span>✓ Construir</span><small id="hud-plan-cost"></small><kbd>Enter</kbd></button>
-      <button type="button" class="go" data-key="Space">Oleada<kbd>Espacio</kbd></button>
+      <button type="button" class="go" data-key="Space">Llamar ya<kbd>Espacio</kbd></button>
       <button type="button" class="go" data-key="KeyR" hidden>Reiniciar<kbd>R</kbd></button>
     </div>
   </nav>

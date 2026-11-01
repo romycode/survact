@@ -146,7 +146,7 @@ export class Inspector {
     const refund = costEntries(def.cost)
       .map(([r, n]) => `${n} ${r === Item.Iron ? 'Fe' : 'pl'}`)
       .join(' ');
-    const canRemove = t.b !== Building.Core && world.phase === 'build';
+    const canRemove = t.b !== Building.Core && world.phase !== 'lost';
     const hpPct = Math.max(0, Math.round((t.hp / def.hp) * 100));
     const sig = [x, y, def.name, hpPct, rows.flat().join(','), def.directed, canRemove, refund].join('|');
     if (sig !== this.sig) {

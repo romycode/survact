@@ -99,6 +99,13 @@ export const MAP = {
   coreClearRadius: 4,
 };
 
+export const WAVES = {
+  /** Time to set up before the first wave. */
+  firstDelaySec: 60,
+  /** Countdown after a wave finishes spawning. Waves can overlap if you're slow. */
+  intervalSec: 40,
+};
+
 export function waveSize(wave: number): number {
   return 4 + Math.floor(wave * 2.5);
 }

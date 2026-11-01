@@ -8,6 +8,7 @@ import { key } from './sim/grid';
 import { DT, World, type Command } from './sim/world';
 
 const SPEEDS = [1, 2, 3];
+let paused = false;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
 const ctx = canvas.getContext('2d')!;
@@ -95,7 +96,10 @@ function handleKey(code: string): boolean {
   }
   switch (code) {
     case 'Space':
-      if (plans.size === 0) pending.push({ type: 'startWave' });
+      pending.push({ type: 'startWave' });
+      break;
+    case 'KeyP':
+      paused = !paused;
       break;
     case 'Enter':
       commitPlans();
@@ -132,6 +136,7 @@ function handleKey(code: string): boolean {
         world = newWorld();
         pending.length = 0;
         ui.speed = 1;
+        paused = false;
         ui.sel = null;
         plans.clear();
         cam.centerOn(0.5, 0.5);
@@ -174,6 +179,7 @@ const hud = {
   speed: $('hud-speed'),
   dir: $('hud-dir'),
   planCost: $('hud-plan-cost'),
+  pause: $('hud-pause'),
 };
 const coreMax = BUILDINGS[Building.Core].hp;
 // World dir -> arrow as seen on screen in the iso view (+x down-right, +y down-left).
@@ -183,7 +189,10 @@ let lastSig = '';
 function syncHud(): void {
   const core = Math.max(0, Math.ceil(world.coreHp));
   const enemies =
-    world.phase === 'build' ? `Siguiente: ${world.nextWaveSize}` : `Quedan: ${world.remaining}`;
+    world.spawning
+      ? `Oleada ${world.wave} entrando · ${world.enemies.length} vivos`
+      : `Oleada ${world.wave + 1} en ${Math.ceil(world.nextWaveIn / 60)}s` +
+        (world.enemies.length ? ` · ${world.enemies.length} vivos` : '');
   const iron = world.inv[Item.Iron];
   const plate = world.inv[Item.Plate];
   const ev = ui.planEval;
@@ -196,8 +205,8 @@ function syncHud(): void {
         .filter(Boolean)
         .join(' · ')
     : '';
-  const hasPlans = plans.size > 0 && world.phase === 'build';
-  const sig = [world.wave, iron, plate, core, enemies, ui.tool, ui.speed, ui.dir, world.phase, hasPlans, planText, ev?.okCount].join('|');
+  const hasPlans = plans.size > 0 && world.phase !== 'lost';
+  const sig = [world.wave, iron, plate, core, enemies, ui.tool, ui.speed, paused, world.spawning, ui.dir, world.phase, hasPlans, planText, ev?.okCount].join('|');
   if (sig === lastSig) return;
   lastSig = sig;
 
@@ -208,6 +217,7 @@ function syncHud(): void {
   if (hud.coreText) hud.coreText.textContent = String(core);
   if (hud.enemies) hud.enemies.textContent = enemies;
   if (hud.speed) hud.speed.textContent = `x${ui.speed}`;
+  if (hud.pause) hud.pause.textContent = paused ? '▶' : '⏸';
   if (hud.dir) hud.dir.textContent = ARROWS[ui.dir];
   if (hud.planCost) hud.planCost.textContent = planText;
 
@@ -220,7 +230,7 @@ function syncHud(): void {
         b.classList.toggle('poor', !world.canAfford(BUILDINGS[TOOL_BUILDING[tool]].cost));
       }
     }
-    if (k === 'Space') b.hidden = world.phase !== 'build' || hasPlans;
+    if (k === 'Space') b.hidden = world.phase === 'lost' || world.spawning || hasPlans;
     if (k === 'Enter') {
       b.hidden = !hasPlans;
       (b as HTMLButtonElement).disabled = !ev || ev.okCount === 0;
@@ -229,6 +239,7 @@ function syncHud(): void {
     if (k === 'KeyR') b.hidden = world.phase !== 'lost';
   }
   document.body.dataset.phase = world.phase;
+  document.body.dataset.paused = String(paused);
 }
 
 // Cost labels come from the data, so the buttons can't drift from the balance.
@@ -246,7 +257,7 @@ let acc = 0;
 let last = performance.now();
 
 function frame(now: number): void {
-  const speed = world.phase === 'wave' ? ui.speed : 1;
+  const speed = paused ? 0 : ui.speed;
   acc += Math.min((now - last) / 1000, 0.25) * speed;
   last = now;
   while (acc >= DT) {
@@ -256,7 +267,7 @@ function frame(now: number): void {
     acc -= DT;
   }
   if (ui.sel && !world.grid.get(key(ui.sel[0], ui.sel[1]))) ui.sel = null; // destroyed/removed
-  if (world.phase !== 'build' && plans.size > 0) plans.clear();
+  if (world.phase === 'lost' && plans.size > 0) plans.clear();
   ui.planEval = plans.size > 0 ? plans.evaluate(world) : null;
   render(ctx, world, cam, ui, acc / DT, dpr, cssW, cssH);
   inspector.update(world, cam, ui);

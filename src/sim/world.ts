@@ -12,6 +12,7 @@ import {
   ECONOMY,
   ENEMY,
   FURNACE,
+  WAVES,
   Item,
   MAP,
   MINER,
@@ -32,13 +33,14 @@ import { Ground, Terrain } from './terrain';
 export const TICK_RATE = 60;
 export const DT = 1 / TICK_RATE;
 
-export type Phase = 'build' | 'wave' | 'lost';
+export type Phase = 'running' | 'lost';
 
 export type Command =
   | { type: 'place'; x: number; y: number; building: Placeable; dir?: number }
   /** Set facing; without dir, rotate clockwise. */
   | { type: 'rotate'; x: number; y: number; dir?: number }
   | { type: 'remove'; x: number; y: number }
+  /** Bring the next wave forward (skip the countdown). */
   | { type: 'startWave' };
 
 export type PlaceError = 'phase' | 'water' | 'occupied' | 'no-ore' | 'reach' | 'cost';
@@ -72,7 +74,11 @@ export class World {
   readonly rng: Rng;
   readonly coreKey = key(0, 0);
 
-  phase: Phase = 'build';
+  phase: Phase = 'running';
+  /** Ticks until the next wave starts spawning (counts only while not spawning). */
+  nextWaveIn = WAVES.firstDelaySec * TICK_RATE;
+  /** True while the current wave is still spawning: its spawn points are frozen. */
+  spawning = false;
   wave = 0;
   tickCount = 0;
   readonly inv: Inventory = { ...ECONOMY.start };
@@ -135,7 +141,7 @@ export class World {
    * caller do cumulative cost accounting itself.
    */
   placeError(x: number, y: number, b: Placeable, planned?: Set<number>, skipCost = false): PlaceError | null {
-    if (this.phase !== 'build') return 'phase';
+    if (this.phase === 'lost') return 'phase';
     const g = this.terrain.at(x, y);
     if (g === Ground.Water) return 'water';
     const k = key(x, y);
@@ -176,7 +182,7 @@ export class World {
         return true;
       }
       case 'remove': {
-        if (this.phase !== 'build') return false;
+        if (this.phase === 'lost') return false;
         const k = key(cmd.x, cmd.y);
         const t = grid.get(k);
         if (!t || t.b === Building.Core) return false;
@@ -187,13 +193,8 @@ export class World {
         return true;
       }
       case 'startWave': {
-        if (this.phase !== 'build') return false;
-        this.syncFlow(); // spawns final for this wave
-        this.wave++;
-        this.phase = 'wave';
-        this.toSpawn = waveSize(this.wave);
-        this.spawnCd = 0;
-        this.spawnRR = 0;
+        if (this.phase === 'lost' || this.spawning) return false;
+        this.nextWaveIn = 0;
         return true;
       }
     }
@@ -206,9 +207,10 @@ export class World {
       e.prevY = e.y;
     }
     this.updateShots();
-    // Build phase is paused planning: the factory only runs during the wave.
-    if (this.phase !== 'wave') return;
+    if (this.phase === 'lost') return;
 
+    // Continuous time: the factory always runs; waves arrive on a countdown.
+    if (!this.spawning && this.nextWaveIn-- <= 0) this.beginWave();
     this.syncFlow();
     this.runMiners();
     this.runFurnaces();
@@ -219,31 +221,40 @@ export class World {
     this.fireTurrets();
     this.cleanup();
 
-    if (this.coreHp <= 0) {
-      this.phase = 'lost';
-      return;
-    }
-    if (this.toSpawn === 0 && this.enemies.length === 0) {
-      this.phase = 'build';
-      this.pickSpawnAngles();
-    }
+    if (this.coreHp <= 0) this.phase = 'lost';
+  }
+
+  private beginWave(): void {
+    this.syncFlow(); // spawn points final for this wave
+    this.wave++;
+    this.spawning = true;
+    this.toSpawn = waveSize(this.wave);
+    this.spawnCd = 0;
+    this.spawnRR = 0;
+  }
+
+  /** Last enemy of the wave is out: start the countdown and show where the next one comes from. */
+  private endSpawning(): void {
+    this.spawning = false;
+    this.nextWaveIn = WAVES.intervalSec * TICK_RATE;
+    this.pickSpawnAngles();
   }
 
   // ---------------- Flow field & spawns ----------------
 
   /**
    * Keep the flow field and spawn points in sync with the base.
-   * Build phase: spawns follow the base outward. Wave: spawns are frozen,
-   * the field only reacts to buildings being destroyed.
+   * Between waves spawns follow the base outward; while a wave is spawning
+   * they're frozen. The rect always covers live enemies so nobody falls out.
    */
   syncFlow(): void {
     if (this.flowVersion === this.grid.version && this.flowAnglesVersion === this.anglesVersion) return;
     this.flowVersion = this.grid.version;
     this.flowAnglesVersion = this.anglesVersion;
 
-    const candidates = this.phase === 'wave' ? this.spawns : this.spawnCandidates();
+    const candidates = this.spawning ? this.spawns : this.spawnCandidates();
     this.flow.compute(this.flowRect(candidates), this.coreKey);
-    if (this.phase !== 'wave') this.spawns = candidates.map((k) => this.reachableNear(k));
+    if (!this.spawning) this.spawns = candidates.map((k) => this.reachableNear(k));
   }
 
   private pickSpawnAngles(): void {
@@ -259,9 +270,11 @@ export class World {
     return this.spawnAngles.map((a) => key(Math.round(Math.cos(a) * d), Math.round(Math.sin(a) * d)));
   }
 
-  private flowRect(spawns: number[]): Rect {
+  private flowRect(spawnKeys: number[]): Rect {
+    let spawns = spawnKeys;
     const b = this.grid.bounds();
     let { x0, y0, x1, y1 } = b;
+    for (const e of this.enemies) spawns = [...spawns, key(Math.floor(e.x), Math.floor(e.y))];
     for (const k of spawns) {
       x0 = Math.min(x0, kx(k));
       y0 = Math.min(y0, ky(k));
@@ -384,6 +397,7 @@ export class World {
       maxHp: hp,
       attackCd: 0,
     });
+    if (this.toSpawn === 0) this.endSpawning();
   }
 
   private moveEnemies(): void {
