@@ -73,11 +73,20 @@ export class World {
 
     this.coreIdx = this.grid.idx(w - 3, h >> 1);
     this.grid.place(this.coreIdx, Building.Core);
-    this.ensureFlow();
+    this.syncFlow();
   }
 
   get coreHp(): number {
     return this.grid.hp[this.coreIdx];
+  }
+
+  /** Enemies still to come in the current wave (spawned + queued). */
+  get remaining(): number {
+    return this.toSpawn + this.enemies.length;
+  }
+
+  get nextWaveSize(): number {
+    return waveSize(this.wave + 1);
   }
 
   canPlace(x: number, y: number): boolean {
@@ -127,7 +136,7 @@ export class World {
     this.updateShots();
     if (this.phase !== 'wave') return;
 
-    this.ensureFlow();
+    this.syncFlow();
     this.spawn();
     this.moveEnemies();
     this.rebuildBuckets();
@@ -144,7 +153,8 @@ export class World {
     }
   }
 
-  private ensureFlow(): void {
+  /** Rebuild the flow field if the grid changed. Cheap no-op otherwise. */
+  syncFlow(): void {
     if (this.flowVersion !== this.grid.version) {
       this.flow.compute();
       this.flowVersion = this.grid.version;

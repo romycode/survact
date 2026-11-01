@@ -12,13 +12,17 @@ npm run build:artifact   # dist/survact.html, un único HTML autocontenido
 
 - `1` muro · `2` torreta · `X` quitar (o clic derecho). Arrastra para pintar.
 - `Espacio` empieza la oleada. `R` reinicia tras perder.
-- En móvil, la barra inferior hace lo mismo (cualquier elemento con `data-key`).
+- `F` velocidad x1/x2/x3 · `WASD` mover cámara · rueda: zoom.
+- Móvil: tap = construir · arrastrar con Muro/Quitar = pintar · dos dedos = zoom y mover.
+  En vertical el mapa se traspone (enemigos arriba, núcleo abajo).
 
 ## Arquitectura
 
 ```
 src/
   main.ts            loop de timestep fijo (60 ticks), input → cola de comandos, resize HiDPI
+  camera.ts          zoom/pan y trasposición del grid en vertical
+  input.ts           punteros: tap vs arrastre vs pinch
   render.ts          solo lectura del mundo, interpolación entre ticks
   sim/               simulación pura: sin DOM ni reloj
     world.ts         estado, fases (build/wave/lost), apply(cmd), tick()

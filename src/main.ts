@@ -1,18 +1,23 @@
-import { fitCamera, render, type Camera, type UiState } from './render';
-import { Building } from './sim/defs';
+import { Camera } from './camera';
+import { attachInput } from './input';
+import { render, type UiState } from './render';
+import { BUILDINGS, Building } from './sim/defs';
 import { DT, World, type Command } from './sim/world';
 
 const GRID_W = 28;
 const GRID_H = 16;
+const SPEEDS = [1, 2, 3];
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
 const ctx = canvas.getContext('2d')!;
+const host = canvas.parentElement!;
 
 let world = newWorld();
-let cam: Camera = { tile: 32, ox: 0, oy: 0 };
+const cam = new Camera();
+const ui: UiState = { tool: 'wall', hoverX: -1, hoverY: -1, speed: 1 };
 let cssW = 0;
 let cssH = 0;
-const ui: UiState = { tool: 'wall', hoverX: -1, hoverY: -1 };
+let dpr = 1;
 
 // Commands are queued from input and applied at the start of the next tick,
 // so input never mutates the world mid-tick.
@@ -24,62 +29,22 @@ function newWorld(): World {
 }
 
 // ---------- HiDPI resize (fits the canvas's parent, not the window) ----------
-const host = canvas.parentElement!;
 function resize(): void {
-  const dpr = window.devicePixelRatio || 1;
+  dpr = window.devicePixelRatio || 1;
   cssW = host.clientWidth;
   cssH = host.clientHeight;
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
   canvas.style.width = `${cssW}px`;
   canvas.style.height = `${cssH}px`;
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  cam = fitCamera(world, cssW, cssH);
+  cam.resize(cssW, cssH, GRID_W, GRID_H);
 }
 new ResizeObserver(resize).observe(host);
 resize();
 
-// ---------- Input ----------
-function toTile(clientX: number, clientY: number): [number, number] {
-  const r = canvas.getBoundingClientRect();
-  return [
-    Math.floor((clientX - r.left - cam.ox) / cam.tile),
-    Math.floor((clientY - r.top - cam.oy) / cam.tile),
-  ];
-}
+attachInput(canvas, cam, ui, (cmd) => pending.push(cmd));
 
-let painting: 'place' | 'remove' | null = null;
-
-function act(x: number, y: number, mode: 'place' | 'remove'): void {
-  if (mode === 'remove' || ui.tool === 'remove') {
-    pending.push({ type: 'remove', x, y });
-  } else {
-    pending.push({
-      type: 'place',
-      x,
-      y,
-      building: ui.tool === 'wall' ? Building.Wall : Building.Turret,
-    });
-  }
-}
-
-canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-canvas.addEventListener('pointerdown', (e) => {
-  const [x, y] = toTile(e.clientX, e.clientY);
-  painting = e.button === 2 ? 'remove' : 'place';
-  canvas.setPointerCapture(e.pointerId);
-  act(x, y, painting);
-});
-canvas.addEventListener('pointermove', (e) => {
-  const [x, y] = toTile(e.clientX, e.clientY);
-  if (x === ui.hoverX && y === ui.hoverY) return;
-  ui.hoverX = x;
-  ui.hoverY = y;
-  if (painting) act(x, y, painting); // drag to paint walls
-});
-canvas.addEventListener('pointerup', () => (painting = null));
-canvas.addEventListener('pointercancel', () => (painting = null));
-
+// ---------- Keyboard + on-screen buttons share one handler ----------
 function handleKey(code: string): boolean {
   switch (code) {
     case 'Digit1':
@@ -94,11 +59,27 @@ function handleKey(code: string): boolean {
     case 'Space':
       pending.push({ type: 'startWave' });
       break;
+    case 'KeyF':
+      ui.speed = SPEEDS[(SPEEDS.indexOf(ui.speed) + 1) % SPEEDS.length];
+      break;
     case 'KeyR':
       if (world.phase === 'lost') {
         world = newWorld();
         pending.length = 0;
+        ui.speed = 1;
       }
+      break;
+    case 'KeyW':
+      cam.panBy(0, 40);
+      break;
+    case 'KeyS':
+      cam.panBy(0, -40);
+      break;
+    case 'KeyA':
+      cam.panBy(40, 0);
+      break;
+    case 'KeyD':
+      cam.panBy(-40, 0);
       break;
     default:
       return false;
@@ -110,22 +91,50 @@ window.addEventListener('keydown', (e) => {
   if (handleKey(e.code)) e.preventDefault();
 });
 
-// Optional on-screen controls (touch): any element with data-key="<KeyboardEvent.code>".
 const buttons = [...document.querySelectorAll<HTMLElement>('[data-key]')];
 for (const b of buttons) b.addEventListener('click', () => handleKey(b.dataset.key!));
 
-let lastUiSig = '';
-function syncButtons(): void {
-  const sig = `${ui.tool}|${world.phase}`;
-  if (sig === lastUiSig) return;
-  lastUiSig = sig;
-  const toolOf: Record<string, string> = { Digit1: 'wall', Digit2: 'turret', KeyX: 'remove' };
+// ---------- DOM HUD: only touched when a value changes ----------
+const $ = (id: string) => document.getElementById(id);
+const hud = {
+  wave: $('hud-wave'),
+  money: $('hud-money'),
+  core: $('hud-core'),
+  coreText: $('hud-core-text'),
+  enemies: $('hud-enemies'),
+  speed: $('hud-speed'),
+};
+const coreMax = BUILDINGS[Building.Core].hp;
+const costOf: Record<string, number> = {
+  Digit1: BUILDINGS[Building.Wall].cost,
+  Digit2: BUILDINGS[Building.Turret].cost,
+};
+const toolOf: Record<string, UiState['tool']> = { Digit1: 'wall', Digit2: 'turret', KeyX: 'remove' };
+
+let lastSig = '';
+function syncHud(): void {
+  const core = Math.max(0, Math.ceil(world.coreHp));
+  const enemies =
+    world.phase === 'build' ? `Siguiente: ${world.nextWaveSize}` : `Quedan: ${world.remaining}`;
+  const sig = [world.wave, world.money, core, enemies, ui.tool, ui.speed, world.phase].join('|');
+  if (sig === lastSig) return;
+  lastSig = sig;
+
+  if (hud.wave) hud.wave.textContent = String(world.wave);
+  if (hud.money) hud.money.textContent = String(world.money);
+  if (hud.core) hud.core.style.width = `${(core / coreMax) * 100}%`;
+  if (hud.coreText) hud.coreText.textContent = String(core);
+  if (hud.enemies) hud.enemies.textContent = enemies;
+  if (hud.speed) hud.speed.textContent = `x${ui.speed}`;
+
   for (const b of buttons) {
     const k = b.dataset.key!;
     if (k in toolOf) b.setAttribute('aria-pressed', String(toolOf[k] === ui.tool));
+    if (k in costOf) b.classList.toggle('poor', world.money < costOf[k]);
     if (k === 'Space') b.hidden = world.phase !== 'build';
     if (k === 'KeyR') b.hidden = world.phase !== 'lost';
   }
+  document.body.dataset.phase = world.phase;
 }
 
 // ---------- Fixed-timestep loop ----------
@@ -133,7 +142,8 @@ let acc = 0;
 let last = performance.now();
 
 function frame(now: number): void {
-  acc += Math.min((now - last) / 1000, 0.25);
+  const speed = world.phase === 'wave' ? ui.speed : 1;
+  acc += Math.min((now - last) / 1000, 0.25) * speed;
   last = now;
   while (acc >= DT) {
     for (const cmd of pending) world.apply(cmd);
@@ -141,8 +151,8 @@ function frame(now: number): void {
     world.tick();
     acc -= DT;
   }
-  render(ctx, world, cam, ui, acc / DT, cssW, cssH);
-  syncButtons();
+  render(ctx, world, cam, ui, acc / DT, dpr, cssW, cssH);
+  syncHud();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

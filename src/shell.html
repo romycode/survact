@@ -1,5 +1,11 @@
 <!-- Shared UI shell: used by index.html (dev) and by the single-file build. -->
 <div class="app">
+  <header class="hud">
+    <span class="stat"><small>Oleada</small><b id="hud-wave">0</b></span>
+    <span class="stat"><small>$</small><b id="hud-money">120</b></span>
+    <span class="stat core"><small>Núcleo</small><span class="meter"><i id="hud-core"></i></span><b id="hud-core-text">500</b></span>
+    <span class="stat"><b id="hud-enemies">Siguiente: 6</b></span>
+  </header>
   <div class="stage"><canvas id="game"></canvas></div>
   <nav class="bar" aria-label="Controles">
     <div class="tools">
@@ -7,7 +13,10 @@
       <button type="button" data-key="Digit2" aria-pressed="false"><span class="sw turret"></span>Torreta <small>$25</small><kbd>2</kbd></button>
       <button type="button" data-key="KeyX" aria-pressed="false"><span class="sw del"></span>Quitar<kbd>X</kbd></button>
     </div>
-    <button type="button" class="go" data-key="Space">Empezar oleada<kbd>Espacio</kbd></button>
-    <button type="button" class="go" data-key="KeyR" hidden>Reiniciar<kbd>R</kbd></button>
+    <div class="tools">
+      <button type="button" class="speed" data-key="KeyF" aria-label="Velocidad"><span id="hud-speed">x1</span><kbd>F</kbd></button>
+      <button type="button" class="go" data-key="Space">Oleada<kbd>Espacio</kbd></button>
+      <button type="button" class="go" data-key="KeyR" hidden>Reiniciar<kbd>R</kbd></button>
+    </div>
   </nav>
 </div>
