@@ -5,12 +5,14 @@ Factory + tower defense por oleadas. HTML canvas + TypeScript, sin motor.
 ```bash
 npm i
 npm run dev
+npm run build:artifact   # dist/survact.html, un único HTML autocontenido
 ```
 
 ## Controles
 
 - `1` muro · `2` torreta · `X` quitar (o clic derecho). Arrastra para pintar.
 - `Espacio` empieza la oleada. `R` reinicia tras perder.
+- En móvil, la barra inferior hace lo mismo (cualquier elemento con `data-key`).
 
 ## Arquitectura
 

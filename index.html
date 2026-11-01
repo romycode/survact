@@ -2,15 +2,24 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>survact</title>
-    <style>
-      html, body { margin: 0; height: 100%; background: #0f1115; overflow: hidden; }
-      canvas { display: block; touch-action: none; }
-    </style>
+    <link rel="stylesheet" href="/src/shell.css" />
   </head>
   <body>
-    <canvas id="game"></canvas>
+<!-- Shared UI shell: used by index.html (dev) and by the single-file build. -->
+<div class="app">
+  <div class="stage"><canvas id="game"></canvas></div>
+  <nav class="bar" aria-label="Controles">
+    <div class="tools">
+      <button type="button" data-key="Digit1" aria-pressed="true"><span class="sw wall"></span>Muro <small>$5</small><kbd>1</kbd></button>
+      <button type="button" data-key="Digit2" aria-pressed="false"><span class="sw turret"></span>Torreta <small>$25</small><kbd>2</kbd></button>
+      <button type="button" data-key="KeyX" aria-pressed="false"><span class="sw del"></span>Quitar<kbd>X</kbd></button>
+    </div>
+    <button type="button" class="go" data-key="Space">Empezar oleada<kbd>Espacio</kbd></button>
+    <button type="button" class="go" data-key="KeyR" hidden>Reiniciar<kbd>R</kbd></button>
+  </nav>
+</div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

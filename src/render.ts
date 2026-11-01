@@ -35,7 +35,7 @@ const C = {
 };
 
 export function fitCamera(world: World, cssW: number, cssH: number): Camera {
-  const hudH = 56;
+  const hudH = 36;
   const tile = Math.floor(Math.min(cssW / world.grid.w, (cssH - hudH) / world.grid.h));
   return {
     tile,
@@ -168,18 +168,12 @@ function drawHud(ctx: CanvasRenderingContext2D, world: World, ui: UiState, cssW:
     12,
     18,
   );
-  ctx.fillStyle = C.dim;
-  const tools = `[1] Muro $${BUILDINGS[Building.Wall].cost}  [2] Torreta $${BUILDINGS[Building.Turret].cost}  [X] Quitar  →  ${toolName(ui.tool)}`;
-  const phase =
-    world.phase === 'build'
-      ? '[Espacio] Empezar oleada'
-      : world.phase === 'wave'
-        ? 'Oleada en curso…'
-        : 'DERROTA — [R] reiniciar';
-  ctx.fillText(`${tools}    ${phase}`, 12, 40);
-  void cssW;
-}
-
-function toolName(t: Tool): string {
-  return t === 'wall' ? 'Muro' : t === 'turret' ? 'Torreta' : 'Quitar';
+  if (world.phase === 'lost') {
+    ctx.fillStyle = C.enemy;
+    ctx.fillText('DERROTA', cssW - 90, 18);
+  } else if (world.phase === 'wave') {
+    ctx.fillStyle = C.dim;
+    ctx.fillText('en curso…', cssW - 100, 18);
+  }
+  void ui;
 }

@@ -23,11 +23,12 @@ function newWorld(): World {
   return new World(GRID_W, GRID_H, seed);
 }
 
-// ---------- HiDPI resize ----------
+// ---------- HiDPI resize (fits the canvas's parent, not the window) ----------
+const host = canvas.parentElement!;
 function resize(): void {
   const dpr = window.devicePixelRatio || 1;
-  cssW = window.innerWidth;
-  cssH = window.innerHeight;
+  cssW = host.clientWidth;
+  cssH = host.clientHeight;
   canvas.width = Math.round(cssW * dpr);
   canvas.height = Math.round(cssH * dpr);
   canvas.style.width = `${cssW}px`;
@@ -35,7 +36,7 @@ function resize(): void {
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   cam = fitCamera(world, cssW, cssH);
 }
-window.addEventListener('resize', resize);
+new ResizeObserver(resize).observe(host);
 resize();
 
 // ---------- Input ----------
@@ -79,8 +80,8 @@ canvas.addEventListener('pointermove', (e) => {
 canvas.addEventListener('pointerup', () => (painting = null));
 canvas.addEventListener('pointercancel', () => (painting = null));
 
-window.addEventListener('keydown', (e) => {
-  switch (e.code) {
+function handleKey(code: string): boolean {
+  switch (code) {
     case 'Digit1':
       ui.tool = 'wall';
       break;
@@ -91,7 +92,6 @@ window.addEventListener('keydown', (e) => {
       ui.tool = 'remove';
       break;
     case 'Space':
-      e.preventDefault();
       pending.push({ type: 'startWave' });
       break;
     case 'KeyR':
@@ -100,8 +100,33 @@ window.addEventListener('keydown', (e) => {
         pending.length = 0;
       }
       break;
+    default:
+      return false;
   }
+  return true;
+}
+
+window.addEventListener('keydown', (e) => {
+  if (handleKey(e.code)) e.preventDefault();
 });
+
+// Optional on-screen controls (touch): any element with data-key="<KeyboardEvent.code>".
+const buttons = [...document.querySelectorAll<HTMLElement>('[data-key]')];
+for (const b of buttons) b.addEventListener('click', () => handleKey(b.dataset.key!));
+
+let lastUiSig = '';
+function syncButtons(): void {
+  const sig = `${ui.tool}|${world.phase}`;
+  if (sig === lastUiSig) return;
+  lastUiSig = sig;
+  const toolOf: Record<string, string> = { Digit1: 'wall', Digit2: 'turret', KeyX: 'remove' };
+  for (const b of buttons) {
+    const k = b.dataset.key!;
+    if (k in toolOf) b.setAttribute('aria-pressed', String(toolOf[k] === ui.tool));
+    if (k === 'Space') b.hidden = world.phase !== 'build';
+    if (k === 'KeyR') b.hidden = world.phase !== 'lost';
+  }
+}
 
 // ---------- Fixed-timestep loop ----------
 let acc = 0;
@@ -117,6 +142,7 @@ function frame(now: number): void {
     acc -= DT;
   }
   render(ctx, world, cam, ui, acc / DT, cssW, cssH);
+  syncButtons();
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
