@@ -1,98 +1,103 @@
-// View transform. The sim grid is landscape (w > h); on a portrait screen we
-// transpose it so enemies come from the top and the core sits at the bottom.
-// That makes tiles ~2x bigger on phones without touching the simulation.
+// Isometric camera over an infinite world.
 //
-// "View" space = tile units after the optional transpose. Zoom/pan live there.
+// World tile (x, y, z) -> screen:
+//   sx = ox + (x - y) * s/2
+//   sy = oy + (x + y) * s/4 - z * s/2
+// where s = width of a tile diamond in CSS px. +x goes down-right, +y down-left.
+// The ground plane (z = 0) is an affine map, so flat things can be drawn with
+// ctx.setTransform in tile units; raised things use project().
 
 export class Camera {
-  rot = false;
-  zoom = 1;
-  cx = 0; // view-space point at the centre of the screen
-  cy = 0;
-  private fit = 1;
-  private viewW = 0;
-  private viewH = 0;
+  scale = 48;
+  cx = 0.5; // world point at the centre of the screen
+  cy = 0.5;
   private cssW = 0;
   private cssH = 0;
+  private sized = false;
 
-  static readonly MAX_ZOOM = 4;
+  static readonly MIN_SCALE = 16;
+  static readonly MAX_SCALE = 160;
 
-  get scale(): number {
-    return this.fit * this.zoom;
-  }
   get ox(): number {
-    return this.cssW / 2 - this.cx * this.scale;
+    return this.cssW / 2 - (this.cx - this.cy) * (this.scale / 2);
   }
   get oy(): number {
-    return this.cssH / 2 - this.cy * this.scale;
+    return this.cssH / 2 - (this.cx + this.cy) * (this.scale / 4);
   }
 
-  resize(cssW: number, cssH: number, gridW: number, gridH: number): void {
-    const rot = cssH > cssW !== gridH > gridW;
-    const reset = rot !== this.rot || this.viewW === 0;
-    this.rot = rot;
+  resize(cssW: number, cssH: number): void {
     this.cssW = cssW;
     this.cssH = cssH;
-    this.viewW = rot ? gridH : gridW;
-    this.viewH = rot ? gridW : gridH;
-    this.fit = Math.min(cssW / this.viewW, cssH / this.viewH);
-    if (reset) {
-      this.zoom = 1;
-      this.cx = this.viewW / 2;
-      this.cy = this.viewH / 2;
+    if (!this.sized) {
+      // ~8 tile diamonds across the short side: tappable on a phone.
+      this.scale = clamp(Math.min(cssW, cssH) / 8, Camera.MIN_SCALE, Camera.MAX_SCALE);
+      this.sized = true;
     }
-    this.clamp();
   }
 
-  /** Canvas-local CSS px -> view-space tile units. */
-  toView(sx: number, sy: number): [number, number] {
-    return [(sx - this.ox) / this.scale, (sy - this.oy) / this.scale];
+  project(x: number, y: number, z = 0): [number, number] {
+    const s = this.scale;
+    return [this.ox + (x - y) * (s / 2), this.oy + (x + y) * (s / 4) - z * (s / 2)];
   }
 
-  /** Canvas-local CSS px -> sim tile coords. */
+  /** Canvas-local CSS px -> ground-plane world coords (fractional tiles). */
+  toWorld(sx: number, sy: number): [number, number] {
+    const u = (sx - this.ox) / (this.scale / 2); // x - y
+    const v = (sy - this.oy) / (this.scale / 4); // x + y
+    return [(u + v) / 2, (v - u) / 2];
+  }
+
   toTile(sx: number, sy: number): [number, number] {
-    const [u, v] = this.toView(sx, sy);
-    return this.rot ? [Math.floor(v), Math.floor(u)] : [Math.floor(u), Math.floor(v)];
+    const [x, y] = this.toWorld(sx, sy);
+    return [Math.floor(x), Math.floor(y)];
   }
 
-  /** Sim coords -> view coords (for things drawn without the transpose, like bars). */
-  simToView(x: number, y: number): [number, number] {
-    return this.rot ? [y, x] : [x, y];
-  }
-
-  /** Set zoom keeping the view point `anchor` under screen point (sx, sy). */
-  zoomTo(zoom: number, anchor: [number, number], sx: number, sy: number): void {
-    this.zoom = Math.min(Camera.MAX_ZOOM, Math.max(1, zoom));
-    this.cx = anchor[0] - (sx - this.cssW / 2) / this.scale;
-    this.cy = anchor[1] - (sy - this.cssH / 2) / this.scale;
-    this.clamp();
+  /** Set scale keeping world point `anchor` under screen point (sx, sy). */
+  zoomTo(scale: number, anchor: [number, number], sx: number, sy: number): void {
+    this.scale = clamp(scale, Camera.MIN_SCALE, Camera.MAX_SCALE);
+    const U = (sx - this.cssW / 2) / (this.scale / 2);
+    const V = (sy - this.cssH / 2) / (this.scale / 4);
+    this.cx = anchor[0] - (U + V) / 2;
+    this.cy = anchor[1] - (V - U) / 2;
   }
 
   panBy(dxPx: number, dyPx: number): void {
-    this.cx -= dxPx / this.scale;
-    this.cy -= dyPx / this.scale;
-    this.clamp();
+    const du = dxPx / (this.scale / 2);
+    const dv = dyPx / (this.scale / 4);
+    this.cx -= (du + dv) / 2;
+    this.cy -= (dv - du) / 2;
   }
 
-  /** Sim-space transform: draw in tile units with sim coordinates. */
-  applySim(ctx: CanvasRenderingContext2D): void {
-    this.applyView(ctx);
-    if (this.rot) ctx.transform(0, 1, 1, 0, 0, 0);
+  centerOn(x: number, y: number): void {
+    this.cx = x;
+    this.cy = y;
   }
 
-  applyView(ctx: CanvasRenderingContext2D): void {
-    ctx.translate(this.ox, this.oy);
-    ctx.scale(this.scale, this.scale);
+  /** Tile range covering the screen (inclusive), padded for tall buildings. */
+  visible(): { x0: number; y0: number; x1: number; y1: number } {
+    const pts = [
+      this.toWorld(0, 0),
+      this.toWorld(this.cssW, 0),
+      this.toWorld(0, this.cssH),
+      this.toWorld(this.cssW, this.cssH),
+    ];
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    return {
+      x0: Math.floor(Math.min(...xs)) - 1,
+      y0: Math.floor(Math.min(...ys)) - 1,
+      x1: Math.ceil(Math.max(...xs)) + 2,
+      y1: Math.ceil(Math.max(...ys)) + 2,
+    };
   }
 
-  private clamp(): void {
+  /** Ground-plane transform: afterwards, draw in tile units at z = 0. */
+  applyGround(ctx: CanvasRenderingContext2D, dpr: number): void {
     const s = this.scale;
-    this.cx = clampAxis(this.cx, this.viewW, this.cssW / 2 / s);
-    this.cy = clampAxis(this.cy, this.viewH, this.cssH / 2 / s);
+    ctx.setTransform((dpr * s) / 2, (dpr * s) / 4, (-dpr * s) / 2, (dpr * s) / 4, dpr * this.ox, dpr * this.oy);
   }
 }
 
-function clampAxis(c: number, size: number, half: number): number {
-  if (size <= half * 2) return size / 2; // fits: centre it
-  return Math.min(size - half, Math.max(half, c));
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
 }

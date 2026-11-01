@@ -1,87 +1,89 @@
-import { BUILDINGS, type Building, type Placeable } from './defs';
+import { BUILDINGS, type Building } from './defs';
 
-// Struct-of-arrays grid. One building per tile (1x1 for now).
-// Per-tile state is shared between building types; each system reads only
-// the fields its building uses.
+// Infinite sparse grid. Only tiles with a building exist (Map keyed by packed
+// coords). At this game's scale (hundreds of entities) a Map beats chunked
+// typed arrays on simplicity and is plenty fast. Map iteration order is
+// insertion order, so systems that iterate tiles stay deterministic.
+
+const OFF = 32768;
+const SPAN = 65536;
+
+/** Pack tile coords (|x|,|y| < 32768) into one exact integer. */
+export const key = (x: number, y: number): number => (y + OFF) * SPAN + (x + OFF);
+export const kx = (k: number): number => (k % SPAN) - OFF;
+export const ky = (k: number): number => Math.floor(k / SPAN) - OFF;
+
+/** Neighbour key in direction d (0=E 1=S 2=W 3=N). Pure arithmetic. */
+export const stepKey = (k: number, d: number): number =>
+  d === 0 ? k + 1 : d === 1 ? k + SPAN : d === 2 ? k - 1 : k - SPAN;
+
+export interface Tile {
+  b: Exclude<Building, 0>;
+  hp: number;
+  dir: number; // 0..3 for directed buildings
+  cd: number; // turret fire cooldown / miner & furnace production timer
+  ammo: number; // turrets
+  inp: number; // furnace input buffer
+  out: number; // furnace output buffer
+  item: number; // belts: Item id, 0 = empty
+  prog: number; // belts: 0..BELT.ticksPerTile
+}
+
+export interface Rect {
+  x0: number;
+  y0: number;
+  x1: number; // inclusive
+  y1: number;
+}
+
 export class Grid {
-  readonly w: number;
-  readonly h: number;
-
-  // Terrain
-  readonly ore: Uint8Array;
-
-  // Building
-  readonly building: Uint8Array;
-  readonly hp: Float32Array;
-  readonly dir: Uint8Array; // 0..3, for directed buildings
-  readonly cd: Int32Array; // turret fire cooldown / miner production timer
-  readonly ammo: Uint16Array; // turrets
-
-  // Belt contents: one item per tile, progress 0..BELT.ticksPerTile
-  readonly item: Uint8Array;
-  readonly itemProg: Uint16Array;
-
+  readonly tiles = new Map<number, Tile>();
   /** Bumped on every structural change so dependents (flow field) know to rebuild. */
   version = 0;
 
-  constructor(w: number, h: number) {
-    this.w = w;
-    this.h = h;
-    const n = w * h;
-    this.ore = new Uint8Array(n);
-    this.building = new Uint8Array(n);
-    this.hp = new Float32Array(n);
-    this.dir = new Uint8Array(n);
-    this.cd = new Int32Array(n);
-    this.ammo = new Uint16Array(n);
-    this.item = new Uint8Array(n);
-    this.itemProg = new Uint16Array(n);
+  private boundsVersion = -1;
+  private boundsCache: Rect = { x0: 0, y0: 0, x1: 0, y1: 0 };
+
+  get(k: number): Tile | undefined {
+    return this.tiles.get(k);
   }
 
-  idx(x: number, y: number): number {
-    return y * this.w + x;
+  building(k: number): number {
+    return this.tiles.get(k)?.b ?? 0;
   }
 
-  inBounds(x: number, y: number): boolean {
-    return x >= 0 && y >= 0 && x < this.w && y < this.h;
+  isSolid(k: number): boolean {
+    const t = this.tiles.get(k);
+    return t !== undefined && BUILDINGS[t.b].solid;
   }
 
-  /** Neighbour index in direction d, or -1 if off-grid. */
-  step(i: number, d: number): number {
-    const x = (i % this.w) + (d === 0 ? 1 : d === 2 ? -1 : 0);
-    const y = ((i / this.w) | 0) + (d === 1 ? 1 : d === 3 ? -1 : 0);
-    return this.inBounds(x, y) ? y * this.w + x : -1;
-  }
-
-  place(i: number, b: Exclude<Building, 0>, dir = 0): void {
-    this.clear(i);
-    this.building[i] = b;
-    this.hp[i] = BUILDINGS[b].hp;
-    this.dir[i] = dir & 3;
+  place(k: number, b: Exclude<Building, 0>, dir = 0): void {
+    this.tiles.set(k, { b, hp: BUILDINGS[b].hp, dir: dir & 3, cd: 0, ammo: 0, inp: 0, out: 0, item: 0, prog: 0 });
     this.version++;
   }
 
-  remove(i: number): void {
-    this.clear(i);
-    this.version++;
+  remove(k: number): void {
+    if (this.tiles.delete(k)) this.version++;
   }
 
-  isSolid(i: number): boolean {
-    const b = this.building[i];
-    return b !== 0 && BUILDINGS[b as Exclude<Building, 0>].solid;
-  }
-
-  isA(i: number, b: Placeable | 1): boolean {
-    return this.building[i] === b;
-  }
-
-  private clear(i: number): void {
-    this.building[i] = 0;
-    this.hp[i] = 0;
-    this.dir[i] = 0;
-    this.cd[i] = 0;
-    this.ammo[i] = 0;
-    this.item[i] = 0;
-    this.itemProg[i] = 0;
+  /** Bounding box of all buildings (cached per version). */
+  bounds(): Rect {
+    if (this.boundsVersion !== this.version) {
+      let x0 = Infinity;
+      let y0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = -Infinity;
+      for (const k of this.tiles.keys()) {
+        const x = kx(k);
+        const y = ky(k);
+        if (x < x0) x0 = x;
+        if (y < y0) y0 = y;
+        if (x > x1) x1 = x;
+        if (y > y1) y1 = y;
+      }
+      this.boundsCache = x0 === Infinity ? { x0: 0, y0: 0, x1: 0, y1: 0 } : { x0, y0, x1, y1 };
+      this.boundsVersion = this.version;
+    }
+    return this.boundsCache;
   }
 }

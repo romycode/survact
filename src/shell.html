@@ -2,21 +2,24 @@
 <div class="app">
   <header class="hud">
     <span class="stat"><small>Oleada</small><b id="hud-wave">0</b></span>
-    <span class="stat"><small>$</small><b id="hud-money">120</b></span>
+    <span class="stat"><span class="sw iron"></span><b id="hud-iron">0</b><small>Hierro</small></span>
+    <span class="stat"><span class="sw plate"></span><b id="hud-plate">0</b><small>Placas</small></span>
     <span class="stat core"><small>Núcleo</small><span class="meter"><i id="hud-core"></i></span><b id="hud-core-text">500</b></span>
     <span class="stat"><b id="hud-enemies">Siguiente: 6</b></span>
   </header>
   <div class="stage"><canvas id="game"></canvas></div>
   <nav class="bar" aria-label="Controles">
     <div class="tools build">
-      <button type="button" data-key="Digit3" aria-pressed="true"><span class="sw belt"></span><span>Cinta<small>$1</small></span><kbd>3</kbd></button>
-      <button type="button" data-key="Digit4" aria-pressed="false"><span class="sw miner"></span><span>Minero<small>$15</small></span><kbd>4</kbd></button>
-      <button type="button" data-key="Digit2" aria-pressed="false"><span class="sw turret"></span><span>Torreta<small>$25</small></span><kbd>2</kbd></button>
-      <button type="button" data-key="Digit1" aria-pressed="false"><span class="sw wall"></span><span>Muro<small>$5</small></span><kbd>1</kbd></button>
-      <button type="button" data-key="KeyX" aria-pressed="false"><span class="sw del"></span><span>Quitar<small>50%</small></span><kbd>X</kbd></button>
+      <button type="button" data-key="Digit1" aria-pressed="true"><span>Cinta<small></small></span><kbd>1</kbd></button>
+      <button type="button" data-key="Digit2" aria-pressed="false"><span>Minero<small></small></span><kbd>2</kbd></button>
+      <button type="button" data-key="Digit3" aria-pressed="false"><span>Horno<small></small></span><kbd>3</kbd></button>
+      <button type="button" data-key="Digit4" aria-pressed="false"><span>Torreta<small></small></span><kbd>4</kbd></button>
+      <button type="button" data-key="Digit5" aria-pressed="false"><span>Muro<small></small></span><kbd>5</kbd></button>
+      <button type="button" data-key="KeyX" aria-pressed="false"><span>Quitar<small>100%</small></span><kbd>X</kbd></button>
     </div>
     <div class="tools actions">
-      <button type="button" class="rot" data-key="KeyE" aria-label="Girar"><b id="hud-dir">→</b><span>Girar</span><kbd>E</kbd></button>
+      <button type="button" class="rot" data-key="KeyE" aria-label="Girar"><b id="hud-dir">↘</b><span>Girar</span><kbd>E</kbd></button>
+      <button type="button" data-key="KeyC" aria-label="Centrar en el núcleo"><b class="ico">⌖</b><kbd>C</kbd></button>
       <button type="button" class="speed" data-key="KeyF" aria-label="Velocidad"><span id="hud-speed">x1</span><kbd>F</kbd></button>
       <button type="button" class="go" data-key="Space">Oleada<kbd>Espacio</kbd></button>
       <button type="button" class="go" data-key="KeyR" hidden>Reiniciar<kbd>R</kbd></button>

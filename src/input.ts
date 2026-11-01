@@ -5,10 +5,10 @@
 //    and the previous belt turns to feed the new one, so corners come out right.
 //  - Drag with Torreta/Minero = nothing (they're expensive).
 //  - Two fingers = pinch zoom + pan; cancels whatever the first finger was doing.
-// Mouse acts immediately on press; wheel zooms, right-click removes.
+// Mouse acts immediately on press; wheel zooms, right-click removes, middle-drag pans.
 
 import { Camera } from './camera';
-import { TOOL_BUILDING, type UiState } from './render';
+import { NO_HOVER, TOOL_BUILDING, type UiState } from './render';
 import { Building } from './sim/defs';
 import type { Command } from './sim/world';
 
@@ -20,7 +20,8 @@ type Mode =
   | { kind: 'idle' }
   | { kind: 'pending'; tile: Tile; sx: number; sy: number }
   | { kind: 'paint'; remove: boolean; last: Tile }
-  | { kind: 'gesture'; d0: number; zoom0: number; anchor: [number, number] }
+  | { kind: 'gesture'; d0: number; scale0: number; anchor: [number, number] }
+  | { kind: 'pan'; x: number; y: number }
   | { kind: 'done' }; // ignore until all fingers lift
 
 export interface InputDeps {
@@ -60,7 +61,7 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: I
     const b = TOOL_BUILDING[ui.tool];
     if (buildingAt(x, y) !== Building.None) return;
     emit({ type: 'place', x, y, building: b, dir: ui.dir });
-    if (b === Building.Belt || b === Building.Miner) ui.sel = [x, y];
+    if (b === Building.Belt || b === Building.Miner || b === Building.Furnace) ui.sel = [x, y];
   };
 
   /** Paint from the last tile to `to`, one 4-connected step at a time (fast swipes skip tiles). */
@@ -109,6 +110,10 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: I
     pts.set(e.pointerId, { x: sx, y: sy });
     const tile = cam.toTile(sx, sy);
 
+    if (e.pointerType === 'mouse' && e.button === 1) {
+      mode = { kind: 'pan', x: sx, y: sy };
+      return;
+    }
     if (e.pointerType === 'mouse') {
       hover(tile);
       const remove = e.button === 2;
@@ -127,8 +132,8 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: I
       mode = {
         kind: 'gesture',
         d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
-        zoom0: cam.zoom,
-        anchor: cam.toView(mx, my),
+        scale0: cam.scale,
+        anchor: cam.toWorld(mx, my),
       };
     }
   });
@@ -167,9 +172,14 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: I
         if (pts.size < 2) return;
         const [a, b] = pair();
         const d = Math.hypot(a.x - b.x, a.y - b.y);
-        cam.zoomTo((mode.zoom0 * d) / mode.d0, mode.anchor, (a.x + b.x) / 2, (a.y + b.y) / 2);
+        cam.zoomTo((mode.scale0 * d) / mode.d0, mode.anchor, (a.x + b.x) / 2, (a.y + b.y) / 2);
         return;
       }
+      case 'pan':
+        cam.panBy(sx - mode.x, sy - mode.y);
+        mode.x = sx;
+        mode.y = sy;
+        return;
       case 'done':
         return;
     }
@@ -184,7 +194,7 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: I
   canvas.addEventListener('pointerup', (e) => end(e, false));
   canvas.addEventListener('pointercancel', (e) => end(e, true));
   canvas.addEventListener('pointerleave', (e) => {
-    if (e.pointerType === 'mouse' && pts.size === 0) hover([-1, -1]);
+    if (e.pointerType === 'mouse' && pts.size === 0) hover([NO_HOVER, NO_HOVER]);
   });
 
   canvas.addEventListener(
@@ -192,7 +202,7 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: I
     (e) => {
       e.preventDefault();
       const [sx, sy] = local(e);
-      cam.zoomTo(cam.zoom * Math.exp(-e.deltaY * 0.0015), cam.toView(sx, sy), sx, sy);
+      cam.zoomTo(cam.scale * Math.exp(-e.deltaY * 0.0015), cam.toWorld(sx, sy), sx, sy);
     },
     { passive: false },
   );
