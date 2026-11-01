@@ -1,9 +1,10 @@
 import { Camera } from './camera';
+import { Hud, TOOL_KEYS } from './hud';
 import { Inspector } from './inspector';
 import { attachInput } from './input';
 import { Plans } from './plans';
-import { NO_HOVER, TOOL_BUILDING, render, type Tool, type UiState } from './render';
-import { BUILDINGS, Building, Item, costEntries } from './sim/defs';
+import { NO_HOVER, render, type UiState } from './render';
+import { BUILDINGS } from './sim/defs';
 import { key } from './sim/grid';
 import { DT, World, type Command } from './sim/world';
 
@@ -80,20 +81,11 @@ attachInput({
 });
 
 // ---------- Keyboard + on-screen buttons share one handler ----------
-const TOOL_KEYS: Record<string, Tool> = {
-  KeyQ: 'select',
-  Digit1: 'belt',
-  Digit2: 'fastbelt',
-  Digit3: 'miner',
-  Digit4: 'furnace',
-  Digit5: 'turret',
-  Digit6: 'wall',
-  KeyX: 'remove',
-};
-
 function handleKey(code: string): boolean {
   if (code in TOOL_KEYS) {
-    ui.tool = TOOL_KEYS[code];
+    // Tapping the active tool again puts it away (back to moving the camera).
+    const t = TOOL_KEYS[code];
+    ui.tool = ui.tool === t ? 'select' : t;
     return true;
   }
   switch (code) {
@@ -166,101 +158,11 @@ window.addEventListener('keydown', (e) => {
   if (handleKey(e.code)) e.preventDefault();
 });
 
-const buttons = [...document.querySelectorAll<HTMLElement>('[data-key]')];
-for (const b of buttons) b.addEventListener('click', () => handleKey(b.dataset.key!));
-
-// ---------- DOM HUD: only touched when a value changes ----------
-const $ = (id: string) => document.getElementById(id);
-const hud = {
-  wave: $('hud-wave'),
-  iron: $('hud-iron'),
-  plate: $('hud-plate'),
-  core: $('hud-core'),
-  coreText: $('hud-core-text'),
-  enemies: $('hud-enemies'),
-  speed: $('hud-speed'),
-  dir: $('hud-dir'),
-  planCost: $('hud-plan-cost'),
-  pause: $('hud-pause'),
-  clock: $('hud-clock'),
-};
-const coreMax = BUILDINGS[Building.Core].hp;
-// World dir -> arrow as seen on screen in the iso view (+x down-right, +y down-left).
-const ARROWS = ['↘', '↙', '↖', '↗'];
-
-let lastSig = '';
-function syncHud(): void {
-  const core = Math.max(0, Math.ceil(world.coreHp));
-  const enemies =
-    world.spawning
-      ? `Oleada ${world.wave} entrando · ${world.enemies.length} vivos`
-      : `Oleada ${world.wave + 1} en ${Math.ceil(world.nextWaveIn / 60)}s` +
-        (world.enemies.length ? ` · ${world.enemies.length} vivos` : '');
-  const iron = world.inv[Item.Iron];
-  const plate = world.inv[Item.Plate];
-  const ev = ui.planEval;
-  const planText = ev
-    ? [
-        ev.cost[Item.Iron] ? `${ev.cost[Item.Iron]} Fe` : '',
-        ev.cost[Item.Plate] ? `${ev.cost[Item.Plate]} pl` : '',
-        ev.badCount ? `${ev.badCount} ✗` : '',
-      ]
-        .filter(Boolean)
-        .join(' · ')
-    : '';
-  const hasPlans = plans.size > 0 && world.phase !== 'lost';
-  const night = world.isNight;
-  const left = world.secondsToDayChange;
-  const clock = `${night ? '☾ Noche' : '☀ Día'} ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
-  const sig = [world.wave, iron, plate, core, enemies, ui.tool, ui.speed, paused, clock, world.spawning, ui.dir, world.phase, hasPlans, planText, ev?.okCount].join('|');
-  if (sig === lastSig) return;
-  lastSig = sig;
-
-  if (hud.wave) hud.wave.textContent = String(world.wave);
-  if (hud.iron) hud.iron.textContent = String(iron);
-  if (hud.plate) hud.plate.textContent = String(plate);
-  if (hud.core) hud.core.style.width = `${(core / coreMax) * 100}%`;
-  if (hud.coreText) hud.coreText.textContent = String(core);
-  if (hud.enemies) hud.enemies.textContent = enemies;
-  if (hud.speed) hud.speed.textContent = `x${ui.speed}`;
-  if (hud.pause) hud.pause.textContent = paused ? '▶' : '⏸';
-  if (hud.clock) {
-    hud.clock.textContent = clock;
-    hud.clock.dataset.night = String(night);
-  }
-  if (hud.dir) hud.dir.textContent = ARROWS[ui.dir];
-  if (hud.planCost) hud.planCost.textContent = planText;
-
-  for (const b of buttons) {
-    const k = b.dataset.key!;
-    const tool = TOOL_KEYS[k];
-    if (tool) {
-      b.setAttribute('aria-pressed', String(tool === ui.tool));
-      if (tool !== 'remove' && tool !== 'select') {
-        b.classList.toggle('poor', !world.canAfford(BUILDINGS[TOOL_BUILDING[tool]].cost));
-      }
-    }
-    if (k === 'Space') b.hidden = world.phase === 'lost' || world.spawning || hasPlans;
-    if (k === 'Enter') {
-      b.hidden = !hasPlans;
-      (b as HTMLButtonElement).disabled = !ev || ev.okCount === 0;
-    }
-    if (k === 'Escape') b.hidden = !hasPlans;
-    if (k === 'KeyR') b.hidden = world.phase !== 'lost';
-  }
-  document.body.dataset.phase = world.phase;
-  document.body.dataset.paused = String(paused);
+for (const b of document.querySelectorAll<HTMLElement>('[data-key]')) {
+  b.addEventListener('click', () => handleKey(b.dataset.key!));
 }
 
-// Cost labels come from the data, so the buttons can't drift from the balance.
-for (const b of buttons) {
-  const tool = TOOL_KEYS[b.dataset.key!];
-  const label = b.querySelector('small');
-  if (!tool || tool === 'remove' || tool === 'select' || !label) continue;
-  label.textContent = costEntries(BUILDINGS[TOOL_BUILDING[tool]].cost)
-    .map(([r, n]) => `${n} ${r === Item.Iron ? 'Fe' : 'pl'}`)
-    .join(' ');
-}
+const hud = new Hud(ui, plans);
 
 // ---------- Fixed-timestep loop ----------
 let acc = 0;
@@ -282,7 +184,7 @@ function frame(now: number): void {
   render(ctx, world, cam, ui, acc / DT, dpr, cssW, cssH);
   inspector.update(world, cam, ui);
   inspector.draw(ctx, dpr, cssW, cssH);
-  syncHud();
+  hud.sync(world, paused);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

@@ -20,16 +20,20 @@ npm run build:artifact   # dist/survact.html, un único HTML autocontenido (desp
 
 ## Controles
 
-Construcción por **planos**: lo que tocas o arrastras queda como fantasma (azul = válido, rojo = no: agua, sin alcance o sin recursos) con el coste acumulado, y se construye con **✓ Construir** (`Enter`) o se descarta con **✗** (`Esc`). Con ratón se construye al soltar.
+El mapa ocupa toda la pantalla; la interfaz flota encima:
 
-- `Q` mover (por defecto): un dedo mueve la cámara; tocar un edificio abre su ficha.
-- `1` cinta · `2` cinta rápida · `3` minero · `4` horno · `5` torreta · `6` muro · `X` quitar (devuelve el 100%).
-- Cinta/Rápida/Muro/Quitar: arrastrar traza una **L limpia** desde donde empezaste (no sigue el temblor del dedo). Las cintas salen con dirección y esquina.
-- Torreta/Minero/Horno: tocar = plano; tocar el plano otra vez lo gira (o lo quita si no tiene dirección). Arrastrar mueve la cámara.
-- Tocar un edificio lo selecciona (ficha con vida, munición, horno… y Girar / Quitar); tocarlo otra vez lo gira.
-- `E` / Girar: gira el seleccionado o el último plano. `C` centra en el núcleo.
-- `Espacio` llamar la siguiente oleada ya · `P` pausa · `F` velocidad x1/x2/x3 · `R` reiniciar tras perder.
-- Dos dedos: zoom + mover · rueda + botón central · `WASD`.
+- **Arriba:** hierro, placas, vida del núcleo · reloj día/noche · oleada con cuenta atrás y **Llamar**.
+- **Dock (abajo):** iconos dibujados con el propio render del juego, con nombre y coste (en rojo si no llega). Tocar la herramienta activa la suelta y vuelves a mover la cámara.
+- **Tira de contexto** sobre el dock: qué hace la herramienta y su coste, **Girar** con la flecha actual, y cuando hay planos **✕ / Construir** con el resumen.
+- **Botones flotantes** (derecha, anclados al dock con CSS anchor positioning): pausa, velocidad, centrar, quitar.
+
+Construcción por **planos**: lo que tocas o arrastras queda como fantasma (azul = válido, rojo = no: agua, sin alcance o sin recursos) y se construye con **Construir** (`Enter`) o se descarta con **✕** (`Esc`). Con ratón se construye al soltar.
+
+- Sin herramienta: un dedo mueve la cámara; tocar un edificio abre su ficha (tocarlo otra vez lo gira).
+- Cinta/Rápida/Muro/Quitar: arrastrar traza una **L limpia** desde donde empezaste; las cintas salen con dirección y esquina.
+- Minero/Horno/Torreta: tocar = plano; tocar el plano otra vez lo gira (o lo quita si no tiene dirección).
+- Teclado: `1`–`6` herramientas · `X` quitar · `Q` soltar · `E` girar · `C` centrar · `Espacio` llamar oleada · `P` pausa · `F` velocidad · `WASD` cámara.
+- Dos dedos: zoom + mover · rueda + botón central.
 
 ## HTML dentro del canvas
 
@@ -41,7 +45,8 @@ En el resto (Safari, Firefox, Chrome estable) la misma ficha es un overlay ancla
 
 ```
 src/
-  main.ts            loop de timestep fijo (60 ticks), input → cola de comandos, HUD en DOM
+  main.ts            loop de timestep fijo (60 ticks), teclado/botones → cola de comandos
+  hud.ts             HUD en DOM: chips, oleada, dock, tira de contexto, fin de partida
   camera.ts          proyección isométrica, zoom/pan, picking inverso
   input.ts           punteros: tap / línea en L / pan / pinch, sobre planos
   plans.ts           planos fantasma: validez, coste acumulado, commit a comandos

@@ -175,7 +175,7 @@ export class Inspector {
       );
       this.rotateBtn.hidden = !def.directed;
       this.removeBtn.hidden = !canRemove;
-      this.removeBtn.textContent = refund ? `Quitar (+${refund})` : 'Quitar';
+      this.removeBtn.textContent = refund ? `Quitar +${refund}` : 'Quitar';
     }
     if (this.el.hidden) this.el.hidden = false;
   }

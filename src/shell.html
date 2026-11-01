@@ -1,34 +1,74 @@
-<!-- Shared UI shell: used by index.html (dev) and by the single-file build. -->
+<!-- Shared UI shell: used by index.html (dev) and by the single-file build.
+     The map fills the screen; everything else floats over it. -->
 <div class="app">
-  <header class="hud">
-    <span class="stat"><small>Oleada</small><b id="hud-wave">0</b></span>
-    <span class="stat"><b id="hud-clock" class="clock">☀ Día</b></span>
-    <span class="stat"><span class="sw iron"></span><b id="hud-iron">0</b><small>Hierro</small></span>
-    <span class="stat"><span class="sw plate"></span><b id="hud-plate">0</b><small>Placas</small></span>
-    <span class="stat core"><small>Núcleo</small><span class="meter"><i id="hud-core"></i></span><b id="hud-core-text">500</b></span>
-    <span class="stat"><b id="hud-enemies">Oleada 1 en 60s</b></span>
-  </header>
   <div class="stage"><canvas id="game"></canvas></div>
-  <nav class="bar" aria-label="Controles">
-    <div class="tools build">
-      <button type="button" data-key="KeyQ" aria-pressed="true"><span>Mover<small>cámara</small></span><kbd>Q</kbd></button>
-      <button type="button" data-key="Digit1" aria-pressed="false"><span>Cinta<small></small></span><kbd>1</kbd></button>
-      <button type="button" data-key="Digit2" aria-pressed="false"><span>Rápida<small></small></span><kbd>2</kbd></button>
-      <button type="button" data-key="Digit3" aria-pressed="false"><span>Minero<small></small></span><kbd>3</kbd></button>
-      <button type="button" data-key="Digit4" aria-pressed="false"><span>Horno<small></small></span><kbd>4</kbd></button>
-      <button type="button" data-key="Digit5" aria-pressed="false"><span>Torreta<small></small></span><kbd>5</kbd></button>
-      <button type="button" data-key="Digit6" aria-pressed="false"><span>Muro<small></small></span><kbd>6</kbd></button>
-      <button type="button" data-key="KeyX" aria-pressed="false"><span>Quitar<small>100%</small></span><kbd>X</kbd></button>
+
+  <header class="hud">
+    <div class="chips">
+      <span class="chip res" title="Hierro"><i class="dot iron"></i><b id="hud-iron">0</b></span>
+      <span class="chip res" title="Placas de hierro"><i class="dot plate"></i><b id="hud-plate">0</b></span>
+      <span class="chip core" title="Vida del núcleo">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1 14 4.5v7L8 15 2 11.5v-7z" /></svg>
+        <span class="meter"><i id="hud-core"></i></span>
+      </span>
     </div>
-    <div class="tools actions">
-      <button type="button" class="rot" data-key="KeyE" aria-label="Girar"><b id="hud-dir">↘</b><span>Girar</span><kbd>E</kbd></button>
-      <button type="button" data-key="KeyC" aria-label="Centrar en el núcleo"><b class="ico">⌖</b><kbd>C</kbd></button>
-      <button type="button" class="speed" data-key="KeyP" aria-label="Pausa"><span id="hud-pause">⏸</span><kbd>P</kbd></button>
-      <button type="button" class="speed" data-key="KeyF" aria-label="Velocidad"><span id="hud-speed">x1</span><kbd>F</kbd></button>
-      <button type="button" class="cancel" data-key="Escape" hidden aria-label="Cancelar planos">✗<kbd>Esc</kbd></button>
-      <button type="button" class="go confirm" data-key="Enter" hidden><span>✓ Construir</span><small id="hud-plan-cost"></small><kbd>Enter</kbd></button>
-      <button type="button" class="go" data-key="Space">Llamar ya<kbd>Espacio</kbd></button>
-      <button type="button" class="go" data-key="KeyR" hidden>Reiniciar<kbd>R</kbd></button>
+    <div class="chips end">
+      <span class="chip clock" id="hud-clock" title="Ciclo día/noche">☀ 0:00</span>
+      <div class="chip wave" id="hud-wave">
+        <span class="wave-text"><small id="hud-wave-label">Oleada 1</small><b id="hud-wave-time">60 s</b></span>
+        <span class="wave-bar"><i id="hud-wave-bar"></i></span>
+        <button type="button" class="call" data-key="Space" title="Traer la oleada ya (Espacio)">Llamar</button>
+      </div>
     </div>
-  </nav>
+  </header>
+
+
+  <footer class="dock">
+    <div class="context" id="ctx" hidden>
+      <div class="ctx-info" id="ctx-info">
+        <b id="ctx-name"></b>
+        <span id="ctx-desc"></span>
+      </div>
+      <button type="button" class="ctx-btn rot" id="ctx-rot" data-key="KeyE" aria-label="Girar (E)">
+        <span id="hud-dir" class="arrow">↘</span>Girar
+      </button>
+      <div class="ctx-plans" id="ctx-plans" hidden>
+        <button type="button" class="ctx-btn cancel" data-key="Escape" aria-label="Descartar planos (Esc)">✕</button>
+        <button type="button" class="ctx-btn confirm" data-key="Enter">
+          <span>Construir</span><small id="hud-plan-cost"></small>
+        </button>
+      </div>
+    </div>
+    <nav class="hotbar" aria-label="Construir">
+      <button type="button" class="slot" data-key="Digit1" aria-pressed="false"><canvas data-icon="belt"></canvas><span class="name">Cinta</span><span class="cost"></span><kbd>1</kbd></button>
+      <button type="button" class="slot" data-key="Digit2" aria-pressed="false"><canvas data-icon="fastbelt"></canvas><span class="name">Rápida</span><span class="cost"></span><kbd>2</kbd></button>
+      <button type="button" class="slot" data-key="Digit3" aria-pressed="false"><canvas data-icon="miner"></canvas><span class="name">Minero</span><span class="cost"></span><kbd>3</kbd></button>
+      <button type="button" class="slot" data-key="Digit4" aria-pressed="false"><canvas data-icon="furnace"></canvas><span class="name">Horno</span><span class="cost"></span><kbd>4</kbd></button>
+      <button type="button" class="slot" data-key="Digit5" aria-pressed="false"><canvas data-icon="turret"></canvas><span class="name">Torreta</span><span class="cost"></span><kbd>5</kbd></button>
+      <button type="button" class="slot" data-key="Digit6" aria-pressed="false"><canvas data-icon="wall"></canvas><span class="name">Muro</span><span class="cost"></span><kbd>6</kbd></button>
+    </nav>
+  </footer>
+
+  <!-- After the dock on purpose: an anchor must come before what's anchored to it. -->
+  <aside class="fabs" aria-label="Partida">
+    <button type="button" class="fab" data-key="KeyP" aria-label="Pausa (P)">
+      <svg class="i-pause" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5h3v14H7zM14 5h3v14h-3z" /></svg>
+      <svg class="i-play" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+    </button>
+    <button type="button" class="fab" data-key="KeyF" aria-label="Velocidad (F)"><b id="hud-speed">x1</b></button>
+    <button type="button" class="fab" data-key="KeyC" aria-label="Centrar en el núcleo (C)">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="6" /><path d="M12 2v4M12 18v4M2 12h4M18 12h4" /></svg>
+    </button>
+    <button type="button" class="fab danger" data-key="KeyX" aria-pressed="false" aria-label="Quitar edificios (X)">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6" /></svg>
+    </button>
+  </aside>
+
+  <div class="gameover" id="gameover" hidden>
+    <div class="card" role="alertdialog" aria-labelledby="go-title">
+      <h2 id="go-title">Núcleo destruido</h2>
+      <p id="go-stats"></p>
+      <button type="button" data-key="KeyR">Nueva partida</button>
+    </div>
+  </div>
 </div>

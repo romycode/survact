@@ -7,7 +7,7 @@
 //  2. Screen space with cam.project(x, y, z): raised things (buildings as
 //     extruded prisms, enemies), sorted back-to-front by x + y.
 
-import type { Camera } from './camera';
+import { Camera } from './camera';
 import { BELT_TICKS, BUILDINGS, Building, DAY, isBelt, DIR_X, DIR_Y, FURNACE, Item, MAP, TURRET, type Placeable } from './sim/defs';
 import { NO_NEXT } from './sim/flowfield';
 import { key, kx, ky, type Tile } from './sim/grid';
@@ -823,4 +823,59 @@ function convexHull(points: [number, number][]): [number, number][] {
     upper.push(q);
   }
   return lower.slice(0, -1).concat(upper.slice(0, -1));
+}
+
+// =====================================================================
+// Toolbar icons: the same renderer, one tile, so buttons look like the thing
+// you're about to build.
+// =====================================================================
+
+export function drawToolIcon(canvas: HTMLCanvasElement, tool: Exclude<Tool, 'select' | 'remove'>): void {
+  const dpr = window.devicePixelRatio || 1;
+  const size = canvas.clientWidth || 44;
+  const sizeH = canvas.clientHeight || 40;
+  canvas.width = Math.round(size * dpr);
+  canvas.height = Math.round(sizeH * dpr);
+  const ctx = canvas.getContext('2d')!;
+  const b = TOOL_BUILDING[tool];
+  const h = HEIGHT[b] ?? 0;
+  const cam = new Camera();
+  cam.resize(size, sizeH);
+  cam.scale = Math.min(size * 0.92, sizeH * 1.3);
+  cam.centerOn(0.5 - h / 2.2, 0.5 - h / 2.2);
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, size, sizeH);
+
+  // Ground tile
+  cam.applyGround(ctx, dpr);
+  ctx.fillStyle = tool === 'miner' ? C.oreGround : C.landAlt;
+  ctx.fillRect(0, 0, 1, 1);
+  if (tool === 'miner') {
+    ctx.fillStyle = C.ore;
+    for (const [ox, oy] of [[0.2, 0.25], [0.75, 0.3], [0.3, 0.8], [0.8, 0.75]]) {
+      ctx.beginPath();
+      ctx.arc(ox, oy, 0.08, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+  if (isBelt(b)) {
+    const fast = b === Building.FastBelt;
+    ctx.fillStyle = fast ? C.fastBelt : C.belt;
+    ctx.fillRect(0.1, 0.1, 0.8, 0.8);
+    if (fast) {
+      ctx.fillStyle = C.fastBeltRail;
+      ctx.fillRect(0.1, 0.1, 0.8, 0.08);
+      ctx.fillRect(0.1, 0.82, 0.8, 0.08);
+    }
+    for (const sOff of [-0.22, 0.18]) groundArrow(ctx, 0.5 + sOff, 0.5, 0, 0.17, fast ? C.fastBeltMark : C.beltMark);
+    ctx.fillStyle = C.iron;
+    ctx.beginPath();
+    ctx.arc(0.72, 0.5, 0.12, 0, Math.PI * 2);
+    ctx.fill();
+    return;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const tile: Tile = { b, hp: 1, dir: 0, cd: 40, ammo: 1, inp: 0, out: 0, item: 0, prog: 0 };
+  drawBuilding(ctx, cam, 0, 0, tile);
 }
