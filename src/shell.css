@@ -25,6 +25,8 @@ body { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color
 .stat b { font-weight: 600; }
 .meter { width: 64px; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
 .meter i { display: block; height: 100%; width: 100%; background: var(--core); transition: width .15s; }
+.clock { color: #f5c451; }
+.clock[data-night="true"] { color: #9db4ff; }
 #hud-enemies { color: var(--danger); font-weight: 500; }
 
 .bar { padding-block: 8px; flex-direction: column; align-items: stretch; gap: 6px; border-top: 1px solid var(--line); }

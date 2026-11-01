@@ -7,6 +7,7 @@ Factory + tower defense en tiempo continuo, en un mundo infinito. HTML canvas + 
 - Las torretas disparan munición que les llega por cinta: hierro (4 disparos) o placas (10).
 - **Agua** bloquea construcción y enemigos.
 - Solo puedes construir a 6 tiles de algo tuyo (zona clara). Los enemigos aparecen más allá de tu edificio más lejano; durante la construcción se ven el punto de spawn y la ruta prevista.
+- **Día y noche.** Ciclo de 4 min (≈90 s de noche). De noche los enemigos van un 30% más rápidos y solo se ve lo iluminado: núcleo, torretas con munición, hornos encendidos y mineros. De día las sombras giran con el sol. El ciclo sale del tick de la simulación: la pausa lo para.
 - **Tiempo continuo.** La fábrica produce siempre y se construye en cualquier momento. Las oleadas llegan con cuenta atrás (60 s la primera, 40 s desde que sale el último enemigo de la anterior); si vas lento, se solapan. "Llamar ya" adelanta la siguiente. `P` pausa.
 
 ```bash
@@ -43,7 +44,7 @@ src/
   input.ts           punteros: tap / línea en L / pan / pinch, sobre planos
   plans.ts           planos fantasma: validez, coste acumulado, commit a comandos
   inspector.ts       ficha del edificio: HTML-in-Canvas o overlay con anchor positioning
-  render.ts          suelo con transform afín + prismas proyectados ordenados por profundidad
+  render.ts          suelo con transform afín + prismas por profundidad, sombras y luces de noche
   sim/               simulación pura: sin DOM ni reloj
     world.ts         estado, cuenta atrás de oleadas, apply(cmd), tick(), economía, spawns
     grid.ts          grid infinito disperso (Map por key empaquetada)

@@ -10,8 +10,10 @@ import {
   BUILDINGS,
   Building,
   ECONOMY,
+  DAY,
   ENEMY,
   FURNACE,
+  daylight,
   WAVES,
   Item,
   MAP,
@@ -115,6 +117,29 @@ export class World {
 
     this.pickSpawnAngles();
     this.syncFlow();
+  }
+
+  /** Time of day in [0,1): 0 = dawn. Derived from ticks, so it pauses with the game. */
+  get dayPhase(): number {
+    const cycle = DAY.cycleSec * TICK_RATE;
+    return ((this.tickCount / cycle + DAY.startAt) % 1 + 1) % 1;
+  }
+
+  /** 1 = full day, 0 = full night. */
+  get daylight(): number {
+    return daylight(this.dayPhase);
+  }
+
+  /** Dusk counts as night: that's when the speed bonus starts ramping. */
+  get isNight(): boolean {
+    return this.dayPhase >= DAY.duskStart;
+  }
+
+  /** Seconds until the next dusk (if day) or dawn (if night). */
+  get secondsToDayChange(): number {
+    const t = this.dayPhase;
+    const target = t < DAY.duskStart ? DAY.duskStart : 1;
+    return Math.ceil((target - t) * DAY.cycleSec);
   }
 
   get coreHp(): number {
@@ -402,7 +427,8 @@ export class World {
 
   private moveEnemies(): void {
     const { grid, flow } = this;
-    const step = ENEMY.speed * DT;
+    // Darkness makes them bolder.
+    const step = ENEMY.speed * DT * (1 + (DAY.nightEnemySpeed - 1) * (1 - this.daylight));
 
     for (const e of this.enemies) {
       const n = flow.nextKey(e.tile);

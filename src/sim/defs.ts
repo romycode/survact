@@ -99,6 +99,32 @@ export const MAP = {
   coreClearRadius: 4,
 };
 
+// Day/night: phase t in [0,1). 0 = start of dawn.
+//   dawn 0–0.06 · day 0.06–0.55 · dusk 0.55–0.62 · night 0.62–1
+export const DAY = {
+  cycleSec: 240,
+  /** Phase at tick 0: early morning, so you get a full day to set up. */
+  startAt: 0.08,
+  /** Enemy speed multiplier in full darkness. */
+  nightEnemySpeed: 1.3,
+  dawnEnd: 0.06,
+  duskStart: 0.55,
+  nightStart: 0.62,
+};
+
+function smoothstep(x: number): number {
+  const c = Math.min(1, Math.max(0, x));
+  return c * c * (3 - 2 * c);
+}
+
+/** 1 = full day, 0 = full night, smooth at dawn and dusk. */
+export function daylight(t: number): number {
+  if (t < DAY.dawnEnd) return smoothstep(t / DAY.dawnEnd);
+  if (t < DAY.duskStart) return 1;
+  if (t < DAY.nightStart) return 1 - smoothstep((t - DAY.duskStart) / (DAY.nightStart - DAY.duskStart));
+  return 0;
+}
+
 export const WAVES = {
   /** Time to set up before the first wave. */
   firstDelaySec: 60,

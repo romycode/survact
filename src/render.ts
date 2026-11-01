@@ -8,7 +8,7 @@
 //     extruded prisms, enemies), sorted back-to-front by x + y.
 
 import type { Camera } from './camera';
-import { BELT, BUILDINGS, Building, DIR_X, DIR_Y, FURNACE, Item, MAP, TURRET, type Placeable } from './sim/defs';
+import { BELT, BUILDINGS, Building, DAY, DIR_X, DIR_Y, FURNACE, Item, MAP, TURRET, type Placeable } from './sim/defs';
 import { NO_NEXT } from './sim/flowfield';
 import { key, kx, ky, type Tile } from './sim/grid';
 import { Ground } from './sim/terrain';
@@ -108,7 +108,9 @@ export function render(
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawBanks(ctx, world, cam, v);
+  drawShadows(ctx, world, cam, v);
   drawRaised(ctx, world, cam, ui, alpha, v);
+  drawLighting(ctx, world, cam, alpha, dpr, cssW, cssH, v);
   drawShotsAndBars(ctx, world, cam, alpha, v);
 }
 
@@ -610,4 +612,191 @@ function inView(k: number, v: View): boolean {
 
 function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
+}
+
+// =====================================================================
+// Day / night
+// =====================================================================
+
+/** Sun shadows: each building's footprint swept along the sun direction. */
+function drawShadows(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v: View): void {
+  const light = world.daylight;
+  if (light <= 0.02) return;
+  const t = world.dayPhase;
+  // 0 at sunrise, 1 at sunset (clamped for dawn/dusk).
+  const p = Math.min(1, Math.max(0, (t - DAY.dawnEnd * 0.5) / (DAY.nightStart - DAY.dawnEnd)));
+  // Shadows swing from pointing +x (morning, down-right) to +y (evening, down-left),
+  // shortest at noon. Long shadows at the ends sell the time of day.
+  const ang = p * (Math.PI / 2);
+  const len = 0.45 + 1.6 * Math.abs(p - 0.5) * 2;
+  const sx = Math.cos(ang) * len;
+  const sy = Math.sin(ang) * len;
+
+  ctx.fillStyle = `rgba(0,0,0,${(0.34 * light).toFixed(3)})`;
+  ctx.beginPath();
+  for (const [k, tile] of world.grid.tiles) {
+    if (tile.b === Building.Belt || !inView(k, v)) continue;
+    const h = (HEIGHT[tile.b] ?? 0.5) + (tile.b === Building.Turret ? 0.35 : 0);
+    const x = kx(k);
+    const y = ky(k);
+    const c: [number, number][] = [
+      [x + 0.08, y + 0.08],
+      [x + 0.92, y + 0.08],
+      [x + 0.92, y + 0.92],
+      [x + 0.08, y + 0.92],
+    ];
+    const pts = [...c, ...c.map(([a, b]) => [a + sx * h, b + sy * h] as [number, number])];
+    const hull = convexHull(pts);
+    hull.forEach(([a, b], i) => {
+      const [px, py] = cam.project(a, b, 0);
+      if (i === 0) ctx.moveTo(px, py);
+      else ctx.lineTo(px, py);
+    });
+    ctx.closePath();
+  }
+  ctx.fill();
+}
+
+let darkCanvas: HTMLCanvasElement | OffscreenCanvas | null = null;
+
+/**
+ * Night: a darkness layer with holes punched by light sources (core, armed
+ * turrets, burning furnaces, miners), plus a warm tint at dawn/dusk and
+ * emissive details (enemy eyes, furnace mouths) drawn on top of the dark.
+ */
+function drawLighting(
+  ctx: CanvasRenderingContext2D,
+  world: World,
+  cam: Camera,
+  alpha: number,
+  dpr: number,
+  cssW: number,
+  cssH: number,
+  v: View,
+): void {
+  const light = world.daylight;
+  const dark = 1 - light;
+
+  // Golden hour tint, strongest mid-transition.
+  const golden = light > 0 && light < 1 ? Math.sin(light * Math.PI) : 0;
+  if (golden > 0.01) {
+    ctx.fillStyle = `rgba(255,128,48,${(0.16 * golden).toFixed(3)})`;
+    ctx.fillRect(0, 0, cssW, cssH);
+  }
+  if (dark <= 0.01) return;
+
+  const W = Math.round(cssW * dpr);
+  const H = Math.round(cssH * dpr);
+  if (!darkCanvas || darkCanvas.width !== W || darkCanvas.height !== H) {
+    darkCanvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(W, H) : document.createElement('canvas');
+    darkCanvas.width = W;
+    darkCanvas.height = H;
+  }
+  const dctx = darkCanvas.getContext('2d') as CanvasRenderingContext2D;
+  dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  dctx.globalCompositeOperation = 'source-over';
+  dctx.clearRect(0, 0, cssW, cssH);
+  dctx.fillStyle = `rgba(6,10,28,${(0.8 * dark).toFixed(3)})`;
+  dctx.fillRect(0, 0, cssW, cssH);
+
+  const lights: { x: number; y: number; r: number; color: string | null }[] = [];
+  const flicker = 0.92 + 0.08 * Math.sin(world.tickCount * 0.7);
+  for (const [k, t] of world.grid.tiles) {
+    if (!inView(k, { x0: v.x0 - 5, y0: v.y0 - 5, x1: v.x1 + 5, y1: v.y1 + 5 })) continue;
+    const x = kx(k) + 0.5;
+    const y = ky(k) + 0.5;
+    switch (t.b) {
+      case Building.Core:
+        lights.push({ x, y, r: 4.8, color: 'rgba(79,179,255,0.10)' });
+        break;
+      case Building.Turret:
+        if (t.ammo > 0) lights.push({ x, y, r: 2.4, color: null });
+        break;
+      case Building.Furnace:
+        lights.push({ x, y, r: t.cd > 0 ? 2.3 * flicker : 1.1, color: t.cd > 0 ? 'rgba(251,146,60,0.16)' : null });
+        break;
+      case Building.Miner:
+        lights.push({ x, y, r: 1.1, color: null });
+        break;
+    }
+  }
+
+  dctx.globalCompositeOperation = 'destination-out';
+  for (const l of lights) isoGlow(dctx, cam, l.x, l.y, l.r, 'rgba(0,0,0,1)');
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.drawImage(darkCanvas as CanvasImageSource, 0, 0);
+  ctx.restore();
+
+  // Coloured light on top (additive), scaled by darkness.
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = dark;
+  for (const l of lights) if (l.color) isoGlow(ctx, cam, l.x, l.y, l.r * 0.8, l.color);
+  ctx.restore();
+
+  // Emissive bits that should read through the dark.
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, dark * 1.3);
+  for (const [k, t] of world.grid.tiles) {
+    if (t.b !== Building.Furnace || t.cd <= 0 || !inView(k, v)) continue;
+    const x = kx(k);
+    const y = ky(k);
+    const h = HEIGHT[Building.Furnace]!;
+    quad(ctx, cam, [[x + 0.38, y + 0.38, h], [x + 0.62, y + 0.38, h], [x + 0.62, y + 0.62, h], [x + 0.38, y + 0.62, h]], C.furnaceHot);
+  }
+  ctx.fillStyle = '#ffe066';
+  const eye = Math.max(1.5, cam.scale * 0.03);
+  for (const e of world.enemies) {
+    const [bx, by] = cam.project(lerp(e.prevX, e.x, alpha), lerp(e.prevY, e.y, alpha), 0.34);
+    ctx.beginPath();
+    ctx.arc(bx - eye * 1.8, by, eye, 0, Math.PI * 2);
+    ctx.arc(bx + eye * 1.8, by, eye, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/** Radial falloff on the ground plane (an ellipse in iso), radius r in tiles. */
+function isoGlow(
+  c: CanvasRenderingContext2D,
+  cam: Camera,
+  x: number,
+  y: number,
+  r: number,
+  color: string,
+): void {
+  const [sx, sy] = cam.project(x, y, 0);
+  const rx = r * cam.scale * 0.707;
+  c.save();
+  c.translate(sx, sy);
+  c.scale(1, 0.5);
+  const g = c.createRadialGradient(0, 0, 0, 0, 0, rx);
+  g.addColorStop(0, color);
+  g.addColorStop(0.55, color);
+  g.addColorStop(1, 'rgba(0,0,0,0)');
+  c.fillStyle = g;
+  c.beginPath();
+  c.arc(0, 0, rx, 0, Math.PI * 2);
+  c.fill();
+  c.restore();
+}
+
+/** Andrew's monotone chain. */
+function convexHull(points: [number, number][]): [number, number][] {
+  const p = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
+    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+  const lower: [number, number][] = [];
+  for (const q of p) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
+    lower.push(q);
+  }
+  const upper: [number, number][] = [];
+  for (let i = p.length - 1; i >= 0; i--) {
+    const q = p[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop();
+    upper.push(q);
+  }
+  return lower.slice(0, -1).concat(upper.slice(0, -1));
 }

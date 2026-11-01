@@ -180,6 +180,7 @@ const hud = {
   dir: $('hud-dir'),
   planCost: $('hud-plan-cost'),
   pause: $('hud-pause'),
+  clock: $('hud-clock'),
 };
 const coreMax = BUILDINGS[Building.Core].hp;
 // World dir -> arrow as seen on screen in the iso view (+x down-right, +y down-left).
@@ -206,7 +207,10 @@ function syncHud(): void {
         .join(' · ')
     : '';
   const hasPlans = plans.size > 0 && world.phase !== 'lost';
-  const sig = [world.wave, iron, plate, core, enemies, ui.tool, ui.speed, paused, world.spawning, ui.dir, world.phase, hasPlans, planText, ev?.okCount].join('|');
+  const night = world.isNight;
+  const left = world.secondsToDayChange;
+  const clock = `${night ? '☾ Noche' : '☀ Día'} ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+  const sig = [world.wave, iron, plate, core, enemies, ui.tool, ui.speed, paused, clock, world.spawning, ui.dir, world.phase, hasPlans, planText, ev?.okCount].join('|');
   if (sig === lastSig) return;
   lastSig = sig;
 
@@ -218,6 +222,10 @@ function syncHud(): void {
   if (hud.enemies) hud.enemies.textContent = enemies;
   if (hud.speed) hud.speed.textContent = `x${ui.speed}`;
   if (hud.pause) hud.pause.textContent = paused ? '▶' : '⏸';
+  if (hud.clock) {
+    hud.clock.textContent = clock;
+    hud.clock.dataset.night = String(night);
+  }
   if (hud.dir) hud.dir.textContent = ARROWS[ui.dir];
   if (hud.planCost) hud.planCost.textContent = planText;
 
