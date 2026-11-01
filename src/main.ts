@@ -1,6 +1,6 @@
 import { Camera } from './camera';
 import { attachInput } from './input';
-import { render, type UiState } from './render';
+import { isDirected, render, type UiState } from './render';
 import { BUILDINGS, Building } from './sim/defs';
 import { DT, World, type Command } from './sim/world';
 
@@ -14,7 +14,7 @@ const host = canvas.parentElement!;
 
 let world = newWorld();
 const cam = new Camera();
-const ui: UiState = { tool: 'belt', hoverX: -1, hoverY: -1, speed: 1, dir: 0 };
+const ui: UiState = { tool: 'belt', hoverX: -1, hoverY: -1, speed: 1, dir: 0, sel: null };
 let cssW = 0;
 let cssH = 0;
 let dpr = 1;
@@ -48,6 +48,7 @@ attachInput({
   ui,
   emit: (cmd) => pending.push(cmd),
   buildingAt: (x, y) => (world.grid.inBounds(x, y) ? world.grid.building[world.grid.idx(x, y)] : -1),
+  isDirected: (x, y) => isDirected(world, x, y),
 });
 
 // ---------- Keyboard + on-screen buttons share one handler ----------
@@ -68,9 +69,18 @@ function handleKey(code: string): boolean {
     case 'KeyX':
       ui.tool = 'remove';
       break;
-    case 'KeyE':
-      ui.dir = (ui.dir + 1) & 3;
+    case 'KeyE': {
+      // Rotate the selected piece if there is one; the next piece follows it.
+      const sel = ui.sel;
+      if (sel && isDirected(world, sel[0], sel[1])) {
+        const d = (world.grid.dir[world.grid.idx(sel[0], sel[1])] + 1) & 3;
+        pending.push({ type: 'rotate', x: sel[0], y: sel[1], dir: d });
+        ui.dir = d;
+      } else {
+        ui.dir = (ui.dir + 1) & 3;
+      }
       break;
+    }
     case 'Space':
       pending.push({ type: 'startWave' });
       break;
@@ -82,6 +92,7 @@ function handleKey(code: string): boolean {
         world = newWorld();
         pending.length = 0;
         ui.speed = 1;
+        ui.sel = null;
       }
       break;
     case 'KeyW':

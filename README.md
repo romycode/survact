@@ -15,7 +15,8 @@ npm run build:artifact   # dist/survact.html, un único HTML autocontenido
 
 - `3` cinta · `4` minero · `2` torreta · `1` muro · `X` quitar (o clic derecho) · `E` girar.
 - Arrastrar pinta muros y cintas; las cintas toman la dirección del arrastre y hacen esquinas solas.
-- Tocar una cinta o minero existente con su herramienta lo gira.
+- Tocar una cinta o minero existente lo gira (con cualquier herramienta) y lo selecciona.
+- `E` / Girar gira la pieza seleccionada (marco amarillo); también durante la oleada.
 - `Espacio` empieza la oleada. `R` reinicia tras perder.
 - `F` velocidad x1/x2/x3 · `WASD` mover cámara · rueda: zoom.
 - Móvil: tap = construir · arrastrar con Cinta/Muro/Quitar = pintar · dos dedos = zoom y mover.

@@ -22,6 +22,8 @@ export interface UiState {
   speed: number;
   /** Facing for new directed buildings, 0=E 1=S 2=W 3=N (sim space). */
   dir: number;
+  /** Last placed/tapped belt or miner: what the Girar button rotates. */
+  sel: [number, number] | null;
 }
 
 const C = {
@@ -31,7 +33,7 @@ const C = {
   spawn: '#2a1518',
   ore: '#8a5a3c',
   belt: '#252b36',
-  beltMark: '#3d4656',
+  beltMark: '#8a94a6',
   miner: '#9c6b4a',
   item: '#d98a52',
   noAmmo: '#e5484d',
@@ -139,6 +141,12 @@ export function render(
   }
   ctx.stroke();
 
+  if (ui.sel && isDirected(world, ui.sel[0], ui.sel[1])) {
+    ctx.strokeStyle = C.shot;
+    ctx.lineWidth = 2 * px;
+    ctx.strokeRect(ui.sel[0] + 0.04, ui.sel[1] + 0.04, 0.92, 0.92);
+  }
+
   if (world.phase === 'build' && grid.inBounds(ui.hoverX, ui.hoverY)) {
     const i = grid.idx(ui.hoverX, ui.hoverY);
     const ok =
@@ -183,6 +191,12 @@ export function render(
     hpBar(ctx, u - 0.3, v - 0.42, 0.6, barH, e.hp / e.maxHp);
   }
   ctx.restore();
+}
+
+export function isDirected(world: World, x: number, y: number): boolean {
+  if (!world.grid.inBounds(x, y)) return false;
+  const b = world.grid.building[world.grid.idx(x, y)];
+  return b !== Building.None && BUILDINGS[b as Exclude<Building, 0>].directed;
 }
 
 /** Trace the route from every spawn row so the player sees how walls bend it. */

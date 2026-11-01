@@ -30,9 +30,11 @@ export interface InputDeps {
   emit: (cmd: Command) => void;
   /** Building currently at a tile (read-only peek at the world). */
   buildingAt: (x: number, y: number) => number;
+  /** Whether the building at a tile has a facing (belt, miner). */
+  isDirected: (x: number, y: number) => boolean;
 }
 
-export function attachInput({ canvas, cam, ui, emit, buildingAt }: InputDeps): void {
+export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: InputDeps): void {
   const pts = new Map<number, { x: number; y: number }>();
   let mode: Mode = { kind: 'idle' };
 
@@ -49,12 +51,16 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt }: InputDeps): v
       emit({ type: 'remove', x, y });
       return;
     }
-    const b = TOOL_BUILDING[ui.tool];
-    if ((b === Building.Belt || b === Building.Miner) && buildingAt(x, y) === b) {
+    // Tapping any belt/miner rotates it, whatever tool is active.
+    if (isDirected(x, y)) {
       emit({ type: 'rotate', x, y });
+      ui.sel = [x, y];
       return;
     }
+    const b = TOOL_BUILDING[ui.tool];
+    if (buildingAt(x, y) !== Building.None) return;
     emit({ type: 'place', x, y, building: b, dir: ui.dir });
+    if (b === Building.Belt || b === Building.Miner) ui.sel = [x, y];
   };
 
   /** Paint from the last tile to `to`, one 4-connected step at a time (fast swipes skip tiles). */
@@ -70,8 +76,10 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt }: InputDeps): v
         emit({ type: 'remove', x: nx, y: ny });
       } else if (ui.tool === 'belt') {
         emit({ type: 'rotate', x, y, dir: d }); // previous belt now feeds this one
-        emit({ type: 'place', x: nx, y: ny, building: Building.Belt, dir: d });
+        if (buildingAt(nx, ny) === Building.Belt) emit({ type: 'rotate', x: nx, y: ny, dir: d });
+        else emit({ type: 'place', x: nx, y: ny, building: Building.Belt, dir: d });
         ui.dir = d;
+        ui.sel = [nx, ny];
       } else {
         emit({ type: 'place', x: nx, y: ny, building: TOOL_BUILDING[ui.tool as 'wall'] });
       }

@@ -121,7 +121,8 @@ export class World {
         return true;
       }
       case 'rotate': {
-        if (this.phase !== 'build' || !grid.inBounds(cmd.x, cmd.y)) return false;
+        // Rotating isn't building: allowed mid-wave so you can reroute under pressure.
+        if (this.phase === 'lost' || !grid.inBounds(cmd.x, cmd.y)) return false;
         const i = grid.idx(cmd.x, cmd.y);
         const b = grid.building[i];
         if (b === Building.None || !BUILDINGS[b as Exclude<Building, 0>].directed) return false;
