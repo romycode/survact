@@ -74,6 +74,7 @@ attachInput({
   emit: (cmd) => pending.push(cmd),
   plans,
   buildingAt: (x, y) => world.grid.building(key(x, y)),
+  dirAt: (x, y) => world.grid.get(key(x, y))?.dir ?? ui.dir,
   phase: () => world.phase,
   commit: commitPlans,
 });
@@ -82,10 +83,11 @@ attachInput({
 const TOOL_KEYS: Record<string, Tool> = {
   KeyQ: 'select',
   Digit1: 'belt',
-  Digit2: 'miner',
-  Digit3: 'furnace',
-  Digit4: 'turret',
-  Digit5: 'wall',
+  Digit2: 'fastbelt',
+  Digit3: 'miner',
+  Digit4: 'furnace',
+  Digit5: 'turret',
+  Digit6: 'wall',
   KeyX: 'remove',
 };
 

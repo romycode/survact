@@ -3,7 +3,9 @@
 Factory + tower defense en tiempo continuo, en un mundo infinito. HTML canvas + TypeScript, sin motor. Vista isométrica.
 
 - **Sin dinero.** Todo se paga con recursos que tienen que llegar al núcleo por cinta.
-- **Hierro** (vetas marrones) → minero → cinta → **horno** → **placas**. Torretas cuestan placas; el resto, hierro.
+- **Hierro** → minero → cinta → **horno** → **placas**. Torretas cuestan placas; el resto, hierro.
+- **Vetas grandes, finitas y espaciadas.** Una por celda de 30×30 (75%), radio 3–7, más grandes y ricas cuanto más lejos del núcleo (30–60k de hierro). Cerca del núcleo solo hay una veta pequeña de arranque; las buenas están a 25–45 tiles. Los mineros las agotan (la ficha muestra lo que queda).
+- **Transporte mejorable.** Cinta (2 tiles/s) y **cinta rápida** (5 tiles/s, 2 Fe + 1 placa). Una cinta lleva un item por tile, así que velocidad = caudal: 4 mineros saturan una cinta normal. La rápida se pone encima de la normal y la mejora en el sitio (cobra la diferencia, mantiene dirección y carga).
 - Las torretas disparan munición que les llega por cinta: hierro (4 disparos) o placas (10).
 - **Agua** bloquea construcción y enemigos.
 - Solo puedes construir a 6 tiles de algo tuyo (zona clara). Los enemigos aparecen más allá de tu edificio más lejano; durante la construcción se ven el punto de spawn y la ruta prevista.
@@ -21,8 +23,8 @@ npm run build:artifact   # dist/survact.html, un único HTML autocontenido (desp
 Construcción por **planos**: lo que tocas o arrastras queda como fantasma (azul = válido, rojo = no: agua, sin alcance o sin recursos) con el coste acumulado, y se construye con **✓ Construir** (`Enter`) o se descarta con **✗** (`Esc`). Con ratón se construye al soltar.
 
 - `Q` mover (por defecto): un dedo mueve la cámara; tocar un edificio abre su ficha.
-- `1` cinta · `2` minero · `3` horno · `4` torreta · `5` muro · `X` quitar (devuelve el 100%).
-- Cinta/Muro/Quitar: arrastrar traza una **L limpia** desde donde empezaste (no sigue el temblor del dedo). Las cintas salen con dirección y esquina.
+- `1` cinta · `2` cinta rápida · `3` minero · `4` horno · `5` torreta · `6` muro · `X` quitar (devuelve el 100%).
+- Cinta/Rápida/Muro/Quitar: arrastrar traza una **L limpia** desde donde empezaste (no sigue el temblor del dedo). Las cintas salen con dirección y esquina.
 - Torreta/Minero/Horno: tocar = plano; tocar el plano otra vez lo gira (o lo quita si no tiene dirección). Arrastrar mueve la cámara.
 - Tocar un edificio lo selecciona (ficha con vida, munición, horno… y Girar / Quitar); tocarlo otra vez lo gira.
 - `E` / Girar: gira el seleccionado o el último plano. `C` centra en el núcleo.
@@ -48,7 +50,7 @@ src/
   sim/               simulación pura: sin DOM ni reloj
     world.ts         estado, cuenta atrás de oleadas, apply(cmd), tick(), economía, spawns
     grid.ts          grid infinito disperso (Map por key empaquetada)
-    terrain.ts       terreno procedural por seed (hierro, agua)
+    terrain.ts       terreno procedural por seed: vetas por celdas (cantidad finita), agua
     flowfield.ts     Dijkstra desde el núcleo sobre un rect acotado; agua infranqueable
     defs.ts          datos de balance
     rng.ts           PRNG con seed (mulberry32)

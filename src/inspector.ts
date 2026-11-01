@@ -10,7 +10,7 @@
 
 import type { Camera } from './camera';
 import type { UiState } from './render';
-import { BUILDINGS, Building, FURNACE, ITEM_NAMES, Item, TURRET, costEntries, type Resource } from './sim/defs';
+import { BELT_TICKS, BUILDINGS, Building, FURNACE, ITEM_NAMES, Item, TURRET, costEntries, type Resource } from './sim/defs';
 import { key } from './sim/grid';
 import type { World } from './sim/world';
 
@@ -30,6 +30,7 @@ const RAISE: Partial<Record<Building, number>> = {
   [Building.Furnace]: 0.7,
   [Building.Turret]: 0.65,
   [Building.Belt]: 0.05,
+  [Building.FastBelt]: 0.05,
 };
 
 export class Inspector {
@@ -134,10 +135,20 @@ export class Inspector {
         );
         break;
       case Building.Miner:
-        rows.push(['Produce', 'Hierro'], ['Estado', t.cd > 0 ? 'Extrayendo' : 'Salida bloqueada o lista']);
+        {
+          const left = world.oreLeft(x, y);
+          rows.push(
+            ['Veta', left > 0 ? `${left} Fe` : 'Agotada'],
+            ['Estado', left === 0 ? 'Parado' : t.cd > 0 ? 'Extrayendo' : 'Salida bloqueada'],
+          );
+        }
         break;
       case Building.Belt:
-        rows.push(['Lleva', t.item ? ITEM_NAMES[t.item as Resource] : 'Nada']);
+      case Building.FastBelt:
+        rows.push(
+          ['Velocidad', `${(60 / BELT_TICKS[t.b]!).toFixed(0)} tiles/s`],
+          ['Lleva', t.item ? ITEM_NAMES[t.item as Resource] : 'Nada'],
+        );
         break;
       case Building.Wall:
         rows.push(['Función', 'Bloquea y desvía']);

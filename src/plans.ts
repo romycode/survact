@@ -72,7 +72,11 @@ export class Plans {
       if (p.kind !== 'place') continue;
       const err = world.placeError(kx(k), ky(k), p.b, planned, true);
       const cost = costEntries(BUILDINGS[p.b].cost);
+      const old = world.grid.get(k); // belt being upgraded in place
+      const refund = old ? costEntries(BUILDINGS[old.b].cost) : [];
+      for (const [r, n] of refund) inv[r] += n;
       if (err !== null || !cost.every(([r, n]) => inv[r] >= n)) {
+        for (const [r, n] of refund) inv[r] -= n;
         bad++;
         continue;
       }

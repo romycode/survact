@@ -8,6 +8,7 @@ export const Building = {
   Belt: 4,
   Miner: 5,
   Furnace: 6,
+  FastBelt: 7,
 } as const;
 export type Building = (typeof Building)[keyof typeof Building];
 export type Placeable = Exclude<Building, 0 | 1>;
@@ -46,6 +47,7 @@ export const BUILDINGS: Record<Exclude<Building, 0>, BuildingDef> = {
   [Building.Turret]: { name: 'Torreta', cost: { [Item.Plate]: 10 }, hp: 80, solid: true, pathCost: 12, directed: false },
   [Building.Belt]: { name: 'Cinta', cost: { [Item.Iron]: 1 }, hp: 20, solid: false, pathCost: 0, directed: true },
   [Building.Miner]: { name: 'Minero', cost: { [Item.Iron]: 10 }, hp: 60, solid: true, pathCost: 12, directed: true },
+  [Building.FastBelt]: { name: 'Cinta rápida', cost: { [Item.Iron]: 2, [Item.Plate]: 1 }, hp: 30, solid: false, pathCost: 0, directed: true },
   [Building.Furnace]: { name: 'Horno', cost: { [Item.Iron]: 12 }, hp: 80, solid: true, pathCost: 12, directed: true },
 };
 
@@ -53,8 +55,32 @@ export const BUILDINGS: Record<Exclude<Building, 0>, BuildingDef> = {
 export const DIR_X = [1, 0, -1, 0] as const;
 export const DIR_Y = [0, 1, 0, -1] as const;
 
-export const BELT = {
-  ticksPerTile: 30, // 2 tiles/s, 1 item per tile
+/** Ticks for an item to cross one tile. One item per tile, so speed = throughput. */
+export const BELT_TICKS: Partial<Record<Building, number>> = {
+  [Building.Belt]: 30, // 2 tiles/s
+  [Building.FastBelt]: 12, // 5 tiles/s
+};
+export const BELT = { ticksPerTile: 30 };
+
+export function isBelt(b: number): boolean {
+  return b === Building.Belt || b === Building.FastBelt;
+}
+
+export const ORE = {
+  /** World is cut into cells this size; most hold one deposit. */
+  cell: 30,
+  cellChance: 0.75,
+  minRadius: 3,
+  maxRadius: 7,
+  /** Ore per tile at the centre of an average deposit. */
+  baseRich: 600,
+  /** Deposits at this distance (and beyond) are max size and richness. */
+  richAtDistance: 120,
+  richFarBonus: 1.5,
+  /** No natural deposits this close to the core (the starter patch covers it). */
+  clearAroundCore: 14,
+  starterRadius: 2.2,
+  starterAmount: 160,
 };
 
 export const MINER = {

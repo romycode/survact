@@ -6,13 +6,15 @@
 // bounded: the flow field covers base + spawn points + padding.
 
 import {
-  BELT,
   BUILDINGS,
   Building,
   ECONOMY,
   DAY,
   ENEMY,
   FURNACE,
+  ORE,
+  BELT_TICKS,
+  isBelt,
   daylight,
   WAVES,
   Item,
@@ -75,6 +77,8 @@ export class World {
   readonly flow: FlowField;
   readonly rng: Rng;
   readonly coreKey = key(0, 0);
+  /** Ore extracted per tile (the rest of the deposit is terrain.initialOre - mined). */
+  private readonly mined = new Map<number, number>();
 
   phase: Phase = 'running';
   /** Ticks until the next wave starts spawning (counts only while not spawning). */
@@ -112,7 +116,7 @@ export class World {
     // Dry, ore-free ground around the core, plus a guaranteed starter iron patch.
     const a = this.rng.next() * Math.PI * 2;
     this.terrain.forceDisc(0, 0, MAP.coreClearRadius, Ground.Land);
-    this.terrain.forceDisc(Math.cos(a) * 6, Math.sin(a) * 6, 2.2, Ground.Ore);
+    this.terrain.forceDisc(Math.cos(a) * 6, Math.sin(a) * 6, ORE.starterRadius, Ground.Ore, ORE.starterAmount);
     this.grid.place(this.coreKey, Building.Core);
 
     this.pickSpawnAngles();
@@ -140,6 +144,12 @@ export class World {
     const t = this.dayPhase;
     const target = t < DAY.duskStart ? DAY.duskStart : 1;
     return Math.ceil((target - t) * DAY.cycleSec);
+  }
+
+  /** Ore left on a tile (0 if none or depleted). */
+  oreLeft(x: number, y: number): number {
+    const init = this.terrain.initialOre(x, y);
+    return init === 0 ? 0 : Math.max(0, init - (this.mined.get(key(x, y)) ?? 0));
   }
 
   get coreHp(): number {
@@ -170,8 +180,10 @@ export class World {
     const g = this.terrain.at(x, y);
     if (g === Ground.Water) return 'water';
     const k = key(x, y);
-    if (this.grid.building(k) !== Building.None || planned?.has(k)) return 'occupied';
-    if (b === Building.Miner && g !== Ground.Ore) return 'no-ore';
+    const here = this.grid.building(k);
+    const upgrade = b === Building.FastBelt && here === Building.Belt;
+    if ((here !== Building.None && !upgrade) || planned?.has(k)) return 'occupied';
+    if (b === Building.Miner && this.oreLeft(x, y) === 0) return 'no-ore';
     if (!this.inReach(x, y, planned)) return 'reach';
     if (!skipCost && !this.canAfford(BUILDINGS[b].cost)) return 'cost';
     return null;
@@ -193,9 +205,21 @@ export class World {
     const { grid } = this;
     switch (cmd.type) {
       case 'place': {
-        if (this.placeError(cmd.x, cmd.y, cmd.building) !== null) return false;
+        const k = key(cmd.x, cmd.y);
+        const old = grid.get(k);
+        // Upgrading a belt in place: refund it first, keep its cargo.
+        if (old) for (const [r, n] of costEntries(BUILDINGS[old.b].cost)) this.inv[r] += n;
+        if (this.placeError(cmd.x, cmd.y, cmd.building) !== null) {
+          if (old) for (const [r, n] of costEntries(BUILDINGS[old.b].cost)) this.inv[r] -= n;
+          return false;
+        }
         for (const [r, n] of costEntries(BUILDINGS[cmd.building].cost)) this.inv[r] -= n;
-        grid.place(key(cmd.x, cmd.y), cmd.building, cmd.dir ?? 0);
+        grid.place(k, cmd.building, cmd.dir ?? old?.dir ?? 0);
+        if (old) {
+          const t = grid.get(k)!;
+          t.item = old.item;
+          t.prog = 0;
+        }
         return true;
       }
       case 'rotate': {
@@ -335,6 +359,7 @@ export class World {
     if (!tile) return false;
     switch (tile.b) {
       case Building.Belt:
+      case Building.FastBelt:
         // Don't feed a belt head-on (it points back at us).
         if (tile.item !== Item.None || stepKey(t, tile.dir) === from) return false;
         tile.item = item;
@@ -365,8 +390,14 @@ export class World {
         t.cd--;
         continue;
       }
+      const x = kx(k);
+      const y = ky(k);
+      if (this.oreLeft(x, y) === 0) continue; // deposit exhausted
       // Holds the finished item until the output accepts it.
-      if (this.accept(stepKey(k, t.dir), k, Item.Iron)) t.cd = MINER.ticksPerItem;
+      if (this.accept(stepKey(k, t.dir), k, Item.Iron)) {
+        t.cd = MINER.ticksPerItem;
+        this.mined.set(k, (this.mined.get(k) ?? 0) + 1);
+      }
     }
   }
 
@@ -385,9 +416,9 @@ export class World {
   }
 
   private runBelts(): void {
-    const end = BELT.ticksPerTile;
     for (const [k, t] of this.grid.tiles) {
-      if (t.b !== Building.Belt || t.item === Item.None) continue;
+      if (!isBelt(t.b) || t.item === Item.None) continue;
+      const end = BELT_TICKS[t.b]!;
       if (t.prog < end) {
         t.prog++;
         continue;

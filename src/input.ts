@@ -4,7 +4,7 @@
 //  Build tools:      tap adds a plan · tap a planned belt/miner/furnace rotates it,
 //                    other plans are removed · tap an existing building selects it
 //                    (tap the selected one again to rotate it).
-//  Cinta/Muro/Quitar: drag draws a clean L-shaped line from where the finger went
+//  Cinta/Rápida/Muro/Quitar: drag draws a clean L-shaped line from where the finger went
 //                    down (not the jittery finger path); belts get directions and corners.
 //  Torreta/Minero/Horno: drag pans (they're placed one at a time).
 //  Two fingers:      pinch zoom + pan, always.
@@ -15,7 +15,7 @@
 import { Camera } from './camera';
 import { dirTo, lPath, type Plan, type Plans } from './plans';
 import { NO_HOVER, TOOL_BUILDING, type Tool, type UiState } from './render';
-import { BUILDINGS, Building } from './sim/defs';
+import { BUILDINGS, Building, isBelt } from './sim/defs';
 import { key } from './sim/grid';
 import type { Command, Phase } from './sim/world';
 
@@ -37,6 +37,7 @@ export interface InputDeps {
   emit: (cmd: Command) => void;
   /** Building currently at a tile (read-only peek at the world). */
   buildingAt: (x: number, y: number) => number;
+  dirAt: (x: number, y: number) => number;
   phase: () => Phase;
   /** Mouse strokes/clicks build immediately. */
   commit: () => void;
@@ -44,7 +45,7 @@ export interface InputDeps {
 
 const TOUCH_SLOP = 10;
 const MOUSE_SLOP = 4;
-const LINE_TOOLS: Tool[] = ['belt', 'wall', 'remove'];
+const LINE_TOOLS: Tool[] = ['belt', 'fastbelt', 'wall', 'remove'];
 const isDirectedB = (b: number) => b !== Building.None && BUILDINGS[b as Exclude<Building, 0>].directed;
 
 export function attachInput(d: InputDeps): void {
@@ -95,6 +96,11 @@ export function attachInput(d: InputDeps): void {
       }
       return;
     }
+    if (t === 'fastbelt' && b === Building.Belt) {
+      // Tap a normal belt with Rápida: upgrade it in place, same direction.
+      plans.set(x, y, { kind: 'place', b: Building.FastBelt, dir: d.dirAt(x, y) });
+      return;
+    }
     if (b !== Building.None) {
       if (isSelected(x, y) && isDirectedB(b)) d.emit({ type: 'rotate', x, y });
       ui.sel = [x, y];
@@ -130,11 +136,13 @@ export function attachInput(d: InputDeps): void {
         else if (plans.get(x, y)) put(x, y, null);
         return;
       }
-      if (t === 'belt') {
+      if (t === 'belt' || t === 'fastbelt') {
         const dir =
           i < path.length - 1 ? dirTo(path[i], path[i + 1]) : path.length > 1 ? dirTo(path[i - 1], path[i]) : ui.dir;
-        if (b === Building.Belt) put(x, y, { kind: 'rotate', dir });
-        else if (b === Building.None) put(x, y, { kind: 'place', b: Building.Belt, dir });
+        const want = TOOL_BUILDING[t];
+        if (b === want) put(x, y, { kind: 'rotate', dir });
+        else if (b === Building.None || (t === 'fastbelt' && b === Building.Belt)) put(x, y, { kind: 'place', b: want, dir });
+        else if (isBelt(b)) put(x, y, { kind: 'rotate', dir });
         if (i === path.length - 1) ui.dir = dir;
         return;
       }

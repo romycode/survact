@@ -8,19 +8,20 @@
 //     extruded prisms, enemies), sorted back-to-front by x + y.
 
 import type { Camera } from './camera';
-import { BELT, BUILDINGS, Building, DAY, DIR_X, DIR_Y, FURNACE, Item, MAP, TURRET, type Placeable } from './sim/defs';
+import { BELT_TICKS, BUILDINGS, Building, DAY, isBelt, DIR_X, DIR_Y, FURNACE, Item, MAP, TURRET, type Placeable } from './sim/defs';
 import { NO_NEXT } from './sim/flowfield';
 import { key, kx, ky, type Tile } from './sim/grid';
 import { Ground } from './sim/terrain';
 import type { Enemy, World } from './sim/world';
 import type { PlanEval, Plans } from './plans';
 
-export type Tool = 'select' | 'wall' | 'turret' | 'belt' | 'miner' | 'furnace' | 'remove';
+export type Tool = 'select' | 'wall' | 'turret' | 'belt' | 'fastbelt' | 'miner' | 'furnace' | 'remove';
 
 export const TOOL_BUILDING: Record<Exclude<Tool, 'remove' | 'select'>, Placeable> = {
   wall: Building.Wall,
   turret: Building.Turret,
   belt: Building.Belt,
+  fastbelt: Building.FastBelt,
   miner: Building.Miner,
   furnace: Building.Furnace,
 };
@@ -59,6 +60,11 @@ const C = {
   turretBase: '#5b5346',
   turret: '#e0b341',
   belt: '#2b323f',
+  fastBelt: '#2a3550',
+  fastBeltRail: '#e0b341',
+  fastBeltMark: '#9cc7ff',
+  oreRich: '#d39a63',
+  oreGround: '#2b241e',
   beltMark: '#8a94a6',
   miner: '#9c6b4a',
   furnace: '#b4532a',
@@ -156,8 +162,13 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
   ctx.beginPath();
   for (let y = v.y0; y <= v.y1; y++) {
     for (let x = v.x0; x <= v.x1; x++) {
-      if (terrain.at(x, y) !== Ground.Ore) continue;
-      for (let k = 0; k < 5; k++) {
+      const left = world.oreLeft(x, y);
+      if (left === 0) continue;
+      ctx.fillStyle = C.oreGround;
+      ctx.fillRect(x, y, 1.01, 1.01);
+      ctx.fillStyle = C.ore;
+      const n = 2 + Math.min(6, Math.round(left / 150)); // denser = richer
+      for (let k = 0; k < n; k++) {
         const h = ((x * 73856093) ^ (y * 19349663) ^ (k * 83492791)) >>> 0;
         const ox = 0.18 + ((h & 255) / 255) * 0.64;
         const oy = 0.18 + (((h >> 8) & 255) / 255) * 0.64;
@@ -165,9 +176,10 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
         ctx.moveTo(x + ox + r, y + oy);
         ctx.arc(x + ox, y + oy, r, 0, Math.PI * 2);
       }
+      ctx.fill();
+      ctx.beginPath();
     }
   }
-  ctx.fill();
 
   if (cam.scale >= 28) {
     ctx.strokeStyle = C.grid;
@@ -198,21 +210,33 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
   }
 
   // Belts (flat) and their items
-  const phase = (world.tickCount % BELT.ticksPerTile) / BELT.ticksPerTile;
   for (const [k, t] of grid.tiles) {
-    if (t.b !== Building.Belt || !inView(k, v)) continue;
+    if (!isBelt(t.b) || !inView(k, v)) continue;
     const x = kx(k);
     const y = ky(k);
-    ctx.fillStyle = C.belt;
+    const fast = t.b === Building.FastBelt;
+    const period = BELT_TICKS[t.b]!;
+    const phase = (world.tickCount % period) / period;
+    ctx.fillStyle = fast ? C.fastBelt : C.belt;
     ctx.fillRect(x + 0.1, y + 0.1, 0.8, 0.8);
+    if (fast) {
+      ctx.fillStyle = C.fastBeltRail;
+      ctx.fillRect(x + 0.1 + (DIR_X[t.dir] === 0 ? 0 : 0), y + 0.1, DIR_X[t.dir] === 0 ? 0.08 : 0.8, DIR_X[t.dir] === 0 ? 0.8 : 0.08);
+      ctx.fillRect(
+        DIR_X[t.dir] === 0 ? x + 0.82 : x + 0.1,
+        DIR_X[t.dir] === 0 ? y + 0.1 : y + 0.82,
+        DIR_X[t.dir] === 0 ? 0.08 : 0.8,
+        DIR_X[t.dir] === 0 ? 0.8 : 0.08,
+      );
+    }
     for (let i = 0; i < 2; i++) {
       const s = ((i * 0.5 + phase) % 1) - 0.5;
-      groundArrow(ctx, x + 0.5 + DIR_X[t.dir] * s * 0.7, y + 0.5 + DIR_Y[t.dir] * s * 0.7, t.dir, 0.15, C.beltMark);
+      groundArrow(ctx, x + 0.5 + DIR_X[t.dir] * s * 0.7, y + 0.5 + DIR_Y[t.dir] * s * 0.7, t.dir, 0.15, fast ? C.fastBeltMark : C.beltMark);
     }
   }
   for (const [k, t] of grid.tiles) {
-    if (t.b !== Building.Belt || !t.item || !inView(k, v)) continue;
-    const s = t.prog / BELT.ticksPerTile - 0.5;
+    if (!isBelt(t.b) || !t.item || !inView(k, v)) continue;
+    const s = t.prog / BELT_TICKS[t.b]! - 0.5;
     const cx = kx(k) + 0.5 + DIR_X[t.dir] * s;
     const cy = ky(k) + 0.5 + DIR_Y[t.dir] * s;
     if (t.item === Item.Plate) {
@@ -270,7 +294,7 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
         : world.placeError(hx, hy, TOOL_BUILDING[ui.tool]) === null || isDirected(world, hx, hy);
     ctx.fillStyle = ok ? C.ok : C.bad;
     ctx.fillRect(hx, hy, 1, 1);
-    if (ui.tool === 'belt' || ui.tool === 'miner' || ui.tool === 'furnace') {
+    if (ui.tool === 'belt' || ui.tool === 'fastbelt' || ui.tool === 'miner' || ui.tool === 'furnace') {
       groundArrow(ctx, hx + 0.5, hy + 0.5, ui.dir, 0.3, C.shot);
     }
     if (ui.tool === 'turret') {
@@ -356,7 +380,7 @@ type Drawable = { depth: number; draw: () => void };
 function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui: UiState, alpha: number, v: View): void {
   const list: Drawable[] = [];
   for (const [k, t] of world.grid.tiles) {
-    if (t.b === Building.Belt || !inView(k, v)) continue;
+    if (isBelt(t.b) || !inView(k, v)) continue;
     const x = kx(k);
     const y = ky(k);
     list.push({ depth: x + y + 1, draw: () => drawBuilding(ctx, cam, x, y, t) });
@@ -367,7 +391,7 @@ function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
     list.push({ depth: ex + ey, draw: () => drawEnemy(ctx, cam, ex, ey, e) });
   }
   for (const [k, p] of ui.plans.map) {
-    if (p.kind !== 'place' || p.b === Building.Belt || !inView(k, v)) continue;
+    if (p.kind !== 'place' || isBelt(p.b) || !inView(k, v)) continue;
     const x = kx(k);
     const y = ky(k);
     const ghost: Tile = { b: p.b, hp: 1, dir: p.dir, cd: 0, ammo: 1, inp: 0, out: 0, item: 0, prog: 0 };
@@ -635,7 +659,7 @@ function drawShadows(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v
   ctx.fillStyle = `rgba(0,0,0,${(0.34 * light).toFixed(3)})`;
   ctx.beginPath();
   for (const [k, tile] of world.grid.tiles) {
-    if (tile.b === Building.Belt || !inView(k, v)) continue;
+    if (isBelt(tile.b) || !inView(k, v)) continue;
     const h = (HEIGHT[tile.b] ?? 0.5) + (tile.b === Building.Turret ? 0.35 : 0);
     const x = kx(k);
     const y = ky(k);
