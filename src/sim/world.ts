@@ -128,24 +128,31 @@ export class World {
     return costEntries(c).every(([r, n]) => this.inv[r] >= n);
   }
 
-  /** Why a building can't go here, or null if it can. */
-  placeError(x: number, y: number, b: Placeable): PlaceError | null {
+  /**
+   * Why a building can't go here, or null if it can.
+   * `planned` = tiles about to be built (UI plans): they count for occupancy
+   * and reach, so a long planned line can extend outward. `skipCost` lets the
+   * caller do cumulative cost accounting itself.
+   */
+  placeError(x: number, y: number, b: Placeable, planned?: Set<number>, skipCost = false): PlaceError | null {
     if (this.phase !== 'build') return 'phase';
     const g = this.terrain.at(x, y);
     if (g === Ground.Water) return 'water';
-    if (this.grid.building(key(x, y)) !== Building.None) return 'occupied';
+    const k = key(x, y);
+    if (this.grid.building(k) !== Building.None || planned?.has(k)) return 'occupied';
     if (b === Building.Miner && g !== Ground.Ore) return 'no-ore';
-    if (!this.inReach(x, y)) return 'reach';
-    if (!this.canAfford(BUILDINGS[b].cost)) return 'cost';
+    if (!this.inReach(x, y, planned)) return 'reach';
+    if (!skipCost && !this.canAfford(BUILDINGS[b].cost)) return 'cost';
     return null;
   }
 
-  /** Within MAP.buildReach (Chebyshev) of any existing building. */
-  inReach(x: number, y: number): boolean {
+  /** Within MAP.buildReach (Chebyshev) of any existing (or planned) building. */
+  inReach(x: number, y: number, planned?: Set<number>): boolean {
     const r = MAP.buildReach;
     for (let dy = -r; dy <= r; dy++) {
       for (let dx = -r; dx <= r; dx++) {
-        if (this.grid.tiles.has(key(x + dx, y + dy))) return true;
+        const k = key(x + dx, y + dy);
+        if (this.grid.tiles.has(k) || planned?.has(k)) return true;
       }
     }
     return false;

@@ -10,7 +10,8 @@
   <div class="stage"><canvas id="game"></canvas></div>
   <nav class="bar" aria-label="Controles">
     <div class="tools build">
-      <button type="button" data-key="Digit1" aria-pressed="true"><span>Cinta<small></small></span><kbd>1</kbd></button>
+      <button type="button" data-key="KeyQ" aria-pressed="true"><span>Mover<small>cámara</small></span><kbd>Q</kbd></button>
+      <button type="button" data-key="Digit1" aria-pressed="false"><span>Cinta<small></small></span><kbd>1</kbd></button>
       <button type="button" data-key="Digit2" aria-pressed="false"><span>Minero<small></small></span><kbd>2</kbd></button>
       <button type="button" data-key="Digit3" aria-pressed="false"><span>Horno<small></small></span><kbd>3</kbd></button>
       <button type="button" data-key="Digit4" aria-pressed="false"><span>Torreta<small></small></span><kbd>4</kbd></button>
@@ -21,6 +22,8 @@
       <button type="button" class="rot" data-key="KeyE" aria-label="Girar"><b id="hud-dir">↘</b><span>Girar</span><kbd>E</kbd></button>
       <button type="button" data-key="KeyC" aria-label="Centrar en el núcleo"><b class="ico">⌖</b><kbd>C</kbd></button>
       <button type="button" class="speed" data-key="KeyF" aria-label="Velocidad"><span id="hud-speed">x1</span><kbd>F</kbd></button>
+      <button type="button" class="cancel" data-key="Escape" hidden aria-label="Cancelar planos">✗<kbd>Esc</kbd></button>
+      <button type="button" class="go confirm" data-key="Enter" hidden><span>✓ Construir</span><small id="hud-plan-cost"></small><kbd>Enter</kbd></button>
       <button type="button" class="go" data-key="Space">Oleada<kbd>Espacio</kbd></button>
       <button type="button" class="go" data-key="KeyR" hidden>Reiniciar<kbd>R</kbd></button>
     </div>

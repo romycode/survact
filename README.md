@@ -17,11 +17,22 @@ npm run build:artifact   # dist/survact.html, un único HTML autocontenido (desp
 
 ## Controles
 
-- `1` cinta · `2` minero · `3` horno · `4` torreta · `5` muro · `X` quitar (devuelve el 100%) · `E` girar · `C` centrar.
-- Arrastrar pinta cintas, muros o quitar; las cintas toman la dirección del arrastre y hacen esquinas solas.
-- Tocar una cinta/minero/horno lo gira y lo selecciona; `E` / Girar gira el seleccionado (también en oleada).
-- `Espacio` oleada · `F` velocidad x1/x2/x3 · `R` reiniciar tras perder.
-- Cámara: dos dedos (zoom + mover) · rueda + botón central · `WASD`.
+Construcción por **planos**: lo que tocas o arrastras queda como fantasma (azul = válido, rojo = no: agua, sin alcance o sin recursos) con el coste acumulado, y se construye con **✓ Construir** (`Enter`) o se descarta con **✗** (`Esc`). Con ratón se construye al soltar.
+
+- `Q` mover (por defecto): un dedo mueve la cámara; tocar un edificio abre su ficha.
+- `1` cinta · `2` minero · `3` horno · `4` torreta · `5` muro · `X` quitar (devuelve el 100%).
+- Cinta/Muro/Quitar: arrastrar traza una **L limpia** desde donde empezaste (no sigue el temblor del dedo). Las cintas salen con dirección y esquina.
+- Torreta/Minero/Horno: tocar = plano; tocar el plano otra vez lo gira (o lo quita si no tiene dirección). Arrastrar mueve la cámara.
+- Tocar un edificio lo selecciona (ficha con vida, munición, horno… y Girar / Quitar); tocarlo otra vez lo gira.
+- `E` / Girar: gira el seleccionado o el último plano. `C` centra en el núcleo.
+- `Espacio` oleada · `F` velocidad · `R` reiniciar tras perder.
+- Dos dedos: zoom + mover · rueda + botón central · `WASD`.
+
+## HTML dentro del canvas
+
+La ficha del edificio usa **HTML-in-Canvas** (`<canvas layoutsubtree content="drawable">` + `ctx.drawElementImage()`) cuando el navegador lo soporta: se pinta dentro del canvas y sus botones siguen siendo DOM real con hit testing. En 2026 eso es solo Chrome con origin trial o `chrome://flags/#canvas-draw-element`.
+
+En el resto (Safari, Firefox, Chrome estable) la misma ficha es un overlay anclado al edificio con **CSS anchor positioning** (Baseline desde enero de 2026) y `position-try-fallbacks` para no salirse de la pantalla. Si `drawElementImage` lanza error, se cambia sola al overlay.
 
 ## Arquitectura
 
@@ -29,7 +40,9 @@ npm run build:artifact   # dist/survact.html, un único HTML autocontenido (desp
 src/
   main.ts            loop de timestep fijo (60 ticks), input → cola de comandos, HUD en DOM
   camera.ts          proyección isométrica, zoom/pan, picking inverso
-  input.ts           punteros: tap vs arrastre vs pinch
+  input.ts           punteros: tap / línea en L / pan / pinch, sobre planos
+  plans.ts           planos fantasma: validez, coste acumulado, commit a comandos
+  inspector.ts       ficha del edificio: HTML-in-Canvas o overlay con anchor positioning
   render.ts          suelo con transform afín + prismas proyectados ordenados por profundidad
   sim/               simulación pura: sin DOM ni reloj
     world.ts         estado, fases, apply(cmd), tick(), economía, spawns

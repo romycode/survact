@@ -13,10 +13,11 @@ import { NO_NEXT } from './sim/flowfield';
 import { key, kx, ky, type Tile } from './sim/grid';
 import { Ground } from './sim/terrain';
 import type { Enemy, World } from './sim/world';
+import type { PlanEval, Plans } from './plans';
 
-export type Tool = 'wall' | 'turret' | 'belt' | 'miner' | 'furnace' | 'remove';
+export type Tool = 'select' | 'wall' | 'turret' | 'belt' | 'miner' | 'furnace' | 'remove';
 
-export const TOOL_BUILDING: Record<Exclude<Tool, 'remove'>, Placeable> = {
+export const TOOL_BUILDING: Record<Exclude<Tool, 'remove' | 'select'>, Placeable> = {
   wall: Building.Wall,
   turret: Building.Turret,
   belt: Building.Belt,
@@ -33,8 +34,11 @@ export interface UiState {
   speed: number;
   /** Facing for new directed buildings, 0=E 1=S 2=W 3=N (world). */
   dir: number;
-  /** Last placed/tapped directed piece: what the Girar button rotates. */
+  /** Selected building (inspector). Girar rotates it if it has a facing. */
   sel: [number, number] | null;
+  plans: Plans;
+  /** Validity of plans, computed once per frame by main. */
+  planEval: PlanEval | null;
 }
 
 const C = {
@@ -72,6 +76,9 @@ const C = {
   range: '#e0b34188',
   ok: '#46d37a66',
   bad: '#e5484d66',
+  plan: '#4fb3ff55',
+  planEdge: '#4fb3ff',
+  planBad: '#e5484d77',
 };
 
 interface View {
@@ -101,7 +108,7 @@ export function render(
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   drawBanks(ctx, world, cam, v);
-  drawRaised(ctx, world, cam, alpha, v);
+  drawRaised(ctx, world, cam, ui, alpha, v);
   drawShotsAndBars(ctx, world, cam, alpha, v);
 }
 
@@ -217,13 +224,41 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
     }
   }
 
+  // Plans (ghosts) on the ground
+  const ev = ui.planEval;
+  for (const [k, p] of ui.plans.map) {
+    if (!inView(k, v)) continue;
+    const x = kx(k);
+    const y = ky(k);
+    const ok = ev?.ok.has(k) ?? false;
+    if (p.kind === 'remove') {
+      ctx.fillStyle = C.planBad;
+      ctx.fillRect(x, y, 1, 1);
+      ctx.strokeStyle = C.noAmmo;
+      ctx.lineWidth = 3 * gpx;
+      ctx.beginPath();
+      ctx.moveTo(x + 0.25, y + 0.25);
+      ctx.lineTo(x + 0.75, y + 0.75);
+      ctx.moveTo(x + 0.75, y + 0.25);
+      ctx.lineTo(x + 0.25, y + 0.75);
+      ctx.stroke();
+      continue;
+    }
+    ctx.fillStyle = ok ? C.plan : C.planBad;
+    ctx.fillRect(x, y, 1, 1);
+    ctx.strokeStyle = ok ? C.planEdge : C.noAmmo;
+    ctx.lineWidth = 1.5 * gpx;
+    ctx.strokeRect(x + 0.04, y + 0.04, 0.92, 0.92);
+    if (p.kind === 'rotate' || BUILDINGS[p.b].directed) groundArrow(ctx, x + 0.5, y + 0.5, p.dir, 0.3, C.shot);
+  }
+
   // Selection + placement preview (on the ground, under buildings)
-  if (ui.sel && isDirected(world, ui.sel[0], ui.sel[1])) {
+  if (ui.sel && grid.get(key(ui.sel[0], ui.sel[1]))) {
     ctx.strokeStyle = C.sel;
     ctx.lineWidth = 2.5 * gpx;
     ctx.strokeRect(ui.sel[0] + 0.03, ui.sel[1] + 0.03, 0.94, 0.94);
   }
-  if (world.phase === 'build' && ui.hoverX !== NO_HOVER) {
+  if (world.phase === 'build' && ui.hoverX !== NO_HOVER && ui.tool !== 'select') {
     const hx = ui.hoverX;
     const hy = ui.hoverY;
     const b = grid.building(key(hx, hy));
@@ -316,7 +351,7 @@ function drawBanks(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v: 
 
 type Drawable = { depth: number; draw: () => void };
 
-function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, alpha: number, v: View): void {
+function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui: UiState, alpha: number, v: View): void {
   const list: Drawable[] = [];
   for (const [k, t] of world.grid.tiles) {
     if (t.b === Building.Belt || !inView(k, v)) continue;
@@ -328,6 +363,21 @@ function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, al
     const ex = lerp(e.prevX, e.x, alpha);
     const ey = lerp(e.prevY, e.y, alpha);
     list.push({ depth: ex + ey, draw: () => drawEnemy(ctx, cam, ex, ey, e) });
+  }
+  for (const [k, p] of ui.plans.map) {
+    if (p.kind !== 'place' || p.b === Building.Belt || !inView(k, v)) continue;
+    const x = kx(k);
+    const y = ky(k);
+    const ghost: Tile = { b: p.b, hp: 1, dir: p.dir, cd: 0, ammo: 1, inp: 0, out: 0, item: 0, prog: 0 };
+    const ok = ui.planEval?.ok.has(k) ?? false;
+    list.push({
+      depth: x + y + 1,
+      draw: () => {
+        ctx.globalAlpha = ok ? 0.45 : 0.25;
+        drawBuilding(ctx, cam, x, y, ghost);
+        ctx.globalAlpha = 1;
+      },
+    });
   }
   list.sort((a, b) => a.depth - b.depth);
   for (const d of list) d.draw();

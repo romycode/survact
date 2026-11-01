@@ -28,7 +28,9 @@ body { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color
 #hud-enemies { color: var(--danger); font-weight: 500; }
 
 .bar { padding-block: 8px; flex-direction: column; align-items: stretch; gap: 6px; border-top: 1px solid var(--line); }
-.tools.build button { flex: 1 1 0; min-width: 0; justify-content: center; padding: 0 4px; }
+.tools.build { overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; }
+.tools.build::-webkit-scrollbar { display: none; }
+.tools.build button { flex: 1 0 auto; min-width: 58px; justify-content: center; padding: 0 6px; scroll-snap-align: start; }
 .tools.build button > span { display: flex; flex-direction: column; gap: 3px; align-items: flex-start; }
 .tools.actions { justify-content: flex-end; }
 .tools.actions .go { flex: 1 1 auto; justify-content: center; max-width: 220px; }
@@ -47,6 +49,10 @@ body { -webkit-user-select: none; user-select: none; -webkit-tap-highlight-color
 .bar small { color: var(--dim); font-size: 12px; }
 .bar kbd { font: 11px var(--mono); color: var(--dim); border: 1px solid var(--line); border-radius: 3px; padding: 2px 4px; }
 .bar .go { border-color: var(--core); color: var(--core); font-weight: 600; }
+.bar .confirm { border-color: var(--good); color: var(--good); flex-direction: column; gap: 3px; }
+.bar .confirm small { color: var(--good); opacity: .8; }
+.bar .confirm:disabled { opacity: .4; cursor: default; }
+.bar .cancel { color: var(--danger); border-color: #e5484d66; min-width: 44px; justify-content: center; font-size: 16px; }
 .bar .go[data-key="KeyR"] { border-color: var(--danger); color: var(--danger); }
 .bar .speed { min-width: 52px; justify-content: center; font-variant-numeric: tabular-nums; }
 body:not([data-phase="build"]) .tools button[aria-pressed] { opacity: .45; }
@@ -58,3 +64,40 @@ body:not([data-phase="build"]) .tools button[aria-pressed] { opacity: .45; }
 .sw.del { border: 1.5px solid var(--danger); }
 @media (hover: none) { .bar kbd { display: none; } }
 @media (max-width: 420px) { .bar button { font-size: 11px; } .hud { font-size: 12px; gap: 4px 10px; } .stat small { display: none; } .stat.core small { display: inline; } }
+
+/* ---------- Inspector card ----------
+   Same styles for both paths; .overlay adds CSS anchor positioning. */
+.inspector {
+  box-sizing: border-box; width: 196px; padding: 10px;
+  display: flex; flex-direction: column; gap: 8px;
+  background: #161a22f2; color: var(--fg); border: 1px solid var(--line); border-radius: 8px;
+  box-shadow: 0 6px 18px #0009; font: 12px/1.25 var(--mono);
+}
+.inspector header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.inspector header b { font-size: 13px; letter-spacing: .02em; }
+.inspector .i-close { all: unset; cursor: pointer; width: 28px; height: 28px; display: grid; place-items: center; color: var(--dim); font-size: 18px; border-radius: 4px; }
+.inspector .i-close:focus-visible { outline: 2px solid var(--core); }
+.inspector .i-hp { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
+.inspector .i-hp i { display: block; height: 100%; background: var(--good); }
+.inspector dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; }
+.inspector dt { color: var(--dim); }
+.inspector dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.inspector footer { display: flex; gap: 6px; }
+.inspector footer button {
+  flex: 1; min-height: 36px; font: inherit; color: var(--fg); background: transparent;
+  border: 1px solid var(--line); border-radius: 6px; cursor: pointer;
+}
+.inspector footer button.danger { color: var(--danger); border-color: #e5484d66; }
+.inspector footer:not(:has(button:not([hidden]))) { display: none; }
+
+.inspector-anchor { position: absolute; width: 1px; height: 1px; pointer-events: none; anchor-name: --selected; }
+.inspector.overlay {
+  position: absolute; z-index: 2; margin: 12px 0;
+  position-anchor: --selected;
+  position-area: top;
+  /* Stay inside the stage: shift sideways first, then flip below. */
+  position-try-fallbacks: top span-right, top span-left, bottom, bottom span-right, bottom span-left;
+}
+@supports not (anchor-name: --x) {
+  .inspector.overlay { top: 8px; left: 50%; translate: -50% 0; }
+}

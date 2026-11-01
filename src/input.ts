@@ -1,98 +1,63 @@
-// Pointer handling. Touch rules, chosen so nothing gets built by accident:
-//  - Tap = act on that tile (on release, so a 2nd finger can still cancel it).
-//    Tapping an existing belt/miner with its own tool rotates it.
-//  - One-finger drag with Muro/Cinta/Quitar = paint. Belts take the drag direction,
-//    and the previous belt turns to feed the new one, so corners come out right.
-//  - Drag with Torreta/Minero = nothing (they're expensive).
-//  - Two fingers = pinch zoom + pan; cancels whatever the first finger was doing.
-// Mouse acts immediately on press; wheel zooms, right-click removes, middle-drag pans.
+// Pointer handling, built around plans (ghost buildings) so touch is precise:
+//
+//  Mover (default):  1-finger drag pans · tap selects a building (inspector).
+//  Build tools:      tap adds a plan · tap a planned belt/miner/furnace rotates it,
+//                    other plans are removed · tap an existing building selects it
+//                    (tap the selected one again to rotate it).
+//  Cinta/Muro/Quitar: drag draws a clean L-shaped line from where the finger went
+//                    down (not the jittery finger path); belts get directions and corners.
+//  Torreta/Minero/Horno: drag pans (they're placed one at a time).
+//  Two fingers:      pinch zoom + pan, always.
+//
+// Touch plans stay until ✓/✗. Mouse commits automatically on release, so desktop
+// still feels immediate. Mouse: right = remove, middle-drag = pan, wheel = zoom.
 
 import { Camera } from './camera';
-import { NO_HOVER, TOOL_BUILDING, type UiState } from './render';
-import { Building } from './sim/defs';
-import type { Command } from './sim/world';
-
-const DRAG_SLOP_PX = 10;
+import { dirTo, lPath, type Plan, type Plans } from './plans';
+import { NO_HOVER, TOOL_BUILDING, type Tool, type UiState } from './render';
+import { BUILDINGS, Building } from './sim/defs';
+import { key } from './sim/grid';
+import type { Command, Phase } from './sim/world';
 
 type Tile = [number, number];
 
 type Mode =
   | { kind: 'idle' }
-  | { kind: 'pending'; tile: Tile; sx: number; sy: number }
-  | { kind: 'paint'; remove: boolean; last: Tile }
-  | { kind: 'gesture'; d0: number; scale0: number; anchor: [number, number] }
+  | { kind: 'pending'; tile: Tile; sx: number; sy: number; mouse: boolean; remove: boolean }
+  | { kind: 'line'; start: Tile; last: Tile; saved: Map<number, Plan | undefined>; mouse: boolean; remove: boolean }
   | { kind: 'pan'; x: number; y: number }
-  | { kind: 'done' }; // ignore until all fingers lift
+  | { kind: 'gesture'; d0: number; scale0: number; anchor: [number, number] }
+  | { kind: 'done' }; // ignore until all pointers lift
 
 export interface InputDeps {
   canvas: HTMLCanvasElement;
   cam: Camera;
   ui: UiState;
+  plans: Plans;
   emit: (cmd: Command) => void;
   /** Building currently at a tile (read-only peek at the world). */
   buildingAt: (x: number, y: number) => number;
-  /** Whether the building at a tile has a facing (belt, miner). */
-  isDirected: (x: number, y: number) => boolean;
+  phase: () => Phase;
+  /** Mouse strokes/clicks build immediately. */
+  commit: () => void;
 }
 
-export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: InputDeps): void {
+const TOUCH_SLOP = 10;
+const MOUSE_SLOP = 4;
+const LINE_TOOLS: Tool[] = ['belt', 'wall', 'remove'];
+const isDirectedB = (b: number) => b !== Building.None && BUILDINGS[b as Exclude<Building, 0>].directed;
+
+export function attachInput(d: InputDeps): void {
+  const { canvas, cam, ui, plans, buildingAt } = d;
   const pts = new Map<number, { x: number; y: number }>();
   let mode: Mode = { kind: 'idle' };
+
+  /** During a wave you can't build: every tool behaves like Mover. */
+  const tool = (): Tool => (d.phase() === 'build' ? ui.tool : 'select');
 
   const local = (e: PointerEvent | WheelEvent): [number, number] => {
     const r = canvas.getBoundingClientRect();
     return [e.clientX - r.left, e.clientY - r.top];
-  };
-
-  const paintable = (): boolean => ui.tool === 'wall' || ui.tool === 'belt' || ui.tool === 'remove';
-
-  /** Single action on a tile (tap / click / first tile of a paint). */
-  const act = ([x, y]: Tile, remove: boolean): void => {
-    if (remove || ui.tool === 'remove') {
-      emit({ type: 'remove', x, y });
-      return;
-    }
-    // Tapping any belt/miner rotates it, whatever tool is active.
-    if (isDirected(x, y)) {
-      emit({ type: 'rotate', x, y });
-      ui.sel = [x, y];
-      return;
-    }
-    const b = TOOL_BUILDING[ui.tool];
-    if (buildingAt(x, y) !== Building.None) return;
-    emit({ type: 'place', x, y, building: b, dir: ui.dir });
-    if (b === Building.Belt || b === Building.Miner || b === Building.Furnace) ui.sel = [x, y];
-  };
-
-  /** Paint from the last tile to `to`, one 4-connected step at a time (fast swipes skip tiles). */
-  const paintTo = (m: Extract<Mode, { kind: 'paint' }>, to: Tile): void => {
-    let [x, y] = m.last;
-    while (x !== to[0] || y !== to[1]) {
-      const dx = to[0] - x;
-      const dy = to[1] - y;
-      const d = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 0 : 2) : dy > 0 ? 1 : 3;
-      const nx = x + (d === 0 ? 1 : d === 2 ? -1 : 0);
-      const ny = y + (d === 1 ? 1 : d === 3 ? -1 : 0);
-      if (m.remove || ui.tool === 'remove') {
-        emit({ type: 'remove', x: nx, y: ny });
-      } else if (ui.tool === 'belt') {
-        emit({ type: 'rotate', x, y, dir: d }); // previous belt now feeds this one
-        if (buildingAt(nx, ny) === Building.Belt) emit({ type: 'rotate', x: nx, y: ny, dir: d });
-        else emit({ type: 'place', x: nx, y: ny, building: Building.Belt, dir: d });
-        ui.dir = d;
-        ui.sel = [nx, ny];
-      } else {
-        emit({ type: 'place', x: nx, y: ny, building: TOOL_BUILDING[ui.tool as 'wall'] });
-      }
-      x = nx;
-      y = ny;
-    }
-    m.last = to;
-  };
-
-  const pair = (): [{ x: number; y: number }, { x: number; y: number }] => {
-    const [a, b] = [...pts.values()];
-    return [a, b];
   };
 
   const hover = (t: Tile): boolean => {
@@ -102,38 +67,108 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: I
     return true;
   };
 
+  const isSelected = (x: number, y: number) => ui.sel !== null && ui.sel[0] === x && ui.sel[1] === y;
+
+  // ---------------- taps ----------------
+
+  const tap = ([x, y]: Tile, remove: boolean): void => {
+    const t = remove ? 'remove' : tool();
+    const b = buildingAt(x, y);
+    const plan = plans.get(x, y);
+
+    if (t === 'select') {
+      if (b !== Building.None && isSelected(x, y) && isDirectedB(b)) d.emit({ type: 'rotate', x, y });
+      ui.sel = b !== Building.None ? [x, y] : null;
+      return;
+    }
+    if (t === 'remove') {
+      if (plan) plans.delete(x, y);
+      else if (b !== Building.None && b !== Building.Core) plans.set(x, y, { kind: 'remove' });
+      return;
+    }
+    if (plan) {
+      if (plan.kind === 'rotate' || (plan.kind === 'place' && isDirectedB(plan.b))) {
+        plan.dir = (plan.dir + 1) & 3;
+        ui.dir = plan.dir;
+      } else {
+        plans.delete(x, y);
+      }
+      return;
+    }
+    if (b !== Building.None) {
+      if (isSelected(x, y) && isDirectedB(b)) d.emit({ type: 'rotate', x, y });
+      ui.sel = [x, y];
+      return;
+    }
+    plans.set(x, y, { kind: 'place', b: TOOL_BUILDING[t], dir: ui.dir });
+  };
+
+  // ---------------- lines ----------------
+
+  /** Redraw this stroke's plans as an L from start to `to`, restoring what it overwrote. */
+  const drawLine = (m: Extract<Mode, { kind: 'line' }>, to: Tile): void => {
+    for (const [k, prev] of m.saved) {
+      if (prev) plans.map.set(k, prev);
+      else plans.map.delete(k);
+    }
+    m.saved.clear();
+    m.last = to;
+
+    const t = m.remove ? 'remove' : tool();
+    const path = lPath(m.start, to);
+    const put = (x: number, y: number, p: Plan | null) => {
+      const k = key(x, y);
+      if (!m.saved.has(k)) m.saved.set(k, plans.map.get(k));
+      if (p) plans.set(x, y, p);
+      else plans.delete(x, y);
+    };
+
+    path.forEach(([x, y], i) => {
+      const b = buildingAt(x, y);
+      if (t === 'remove') {
+        if (b !== Building.None && b !== Building.Core) put(x, y, { kind: 'remove' });
+        else if (plans.get(x, y)) put(x, y, null);
+        return;
+      }
+      if (t === 'belt') {
+        const dir =
+          i < path.length - 1 ? dirTo(path[i], path[i + 1]) : path.length > 1 ? dirTo(path[i - 1], path[i]) : ui.dir;
+        if (b === Building.Belt) put(x, y, { kind: 'rotate', dir });
+        else if (b === Building.None) put(x, y, { kind: 'place', b: Building.Belt, dir });
+        if (i === path.length - 1) ui.dir = dir;
+        return;
+      }
+      if (t === 'wall' && b === Building.None) put(x, y, { kind: 'place', b: Building.Wall, dir: 0 });
+    });
+  };
+
+  // ---------------- pointer events ----------------
+
   canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (e.target !== canvas) return; // HTML drawn inside the canvas handles itself
     canvas.setPointerCapture(e.pointerId);
     const [sx, sy] = local(e);
     pts.set(e.pointerId, { x: sx, y: sy });
     const tile = cam.toTile(sx, sy);
+    const mouse = e.pointerType === 'mouse';
 
-    if (e.pointerType === 'mouse' && e.button === 1) {
+    if (mouse && e.button === 1) {
       mode = { kind: 'pan', x: sx, y: sy };
       return;
     }
-    if (e.pointerType === 'mouse') {
-      hover(tile);
-      const remove = e.button === 2;
-      act(tile, remove);
-      mode = remove || paintable() ? { kind: 'paint', remove, last: tile } : { kind: 'done' };
-      return;
-    }
-
     if (pts.size === 1) {
-      hover(tile);
-      mode = { kind: 'pending', tile, sx, sy };
+      if (mouse) hover(tile);
+      mode = { kind: 'pending', tile, sx, sy, mouse, remove: mouse && e.button === 2 };
     } else if (pts.size === 2) {
-      const [a, b] = pair();
-      const mx = (a.x + b.x) / 2;
-      const my = (a.y + b.y) / 2;
+      if (mode.kind === 'line') drawLine(mode, mode.start); // collapse the stroke to its first tile
+      const [a, b] = [...pts.values()];
       mode = {
         kind: 'gesture',
         d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
         scale0: cam.scale,
-        anchor: cam.toWorld(mx, my),
+        anchor: cam.toWorld((a.x + b.x) / 2, (a.y + b.y) / 2),
       };
     }
   });
@@ -152,34 +187,42 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: I
         if (e.pointerType === 'mouse') hover(tile);
         return;
       case 'pending': {
-        if (Math.hypot(sx - mode.sx, sy - mode.sy) < DRAG_SLOP_PX) return;
-        if (!paintable()) {
-          mode = { kind: 'done' };
-          return;
+        const slop = mode.mouse ? MOUSE_SLOP : TOUCH_SLOP;
+        if (Math.hypot(sx - mode.sx, sy - mode.sy) < slop) return;
+        const t = mode.remove ? 'remove' : tool();
+        if (LINE_TOOLS.includes(t)) {
+          const line: Extract<Mode, { kind: 'line' }> = {
+            kind: 'line',
+            start: mode.tile,
+            last: mode.tile,
+            saved: new Map(),
+            mouse: mode.mouse,
+            remove: mode.remove,
+          };
+          mode = line;
+          drawLine(line, tile);
+        } else {
+          mode = { kind: 'pan', x: sx, y: sy };
         }
-        // Start a paint. Placing the first belt with ui.dir is fine: the first
-        // step rotates it towards the drag.
-        act(mode.tile, false);
-        mode = { kind: 'paint', remove: false, last: mode.tile };
-        hover(tile);
-        paintTo(mode, tile);
+        if (e.pointerType === 'mouse') hover(tile);
         return;
       }
-      case 'paint':
-        if (hover(tile)) paintTo(mode, tile);
+      case 'line':
+        if (e.pointerType === 'mouse') hover(tile);
+        if (tile[0] !== mode.last[0] || tile[1] !== mode.last[1]) drawLine(mode, tile);
         return;
-      case 'gesture': {
-        if (pts.size < 2) return;
-        const [a, b] = pair();
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
-        cam.zoomTo((mode.scale0 * d) / mode.d0, mode.anchor, (a.x + b.x) / 2, (a.y + b.y) / 2);
-        return;
-      }
       case 'pan':
         cam.panBy(sx - mode.x, sy - mode.y);
         mode.x = sx;
         mode.y = sy;
         return;
+      case 'gesture': {
+        if (pts.size < 2) return;
+        const [a, b] = [...pts.values()];
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        cam.zoomTo((mode.scale0 * dist) / mode.d0, mode.anchor, (a.x + b.x) / 2, (a.y + b.y) / 2);
+        return;
+      }
       case 'done':
         return;
     }
@@ -187,7 +230,14 @@ export function attachInput({ canvas, cam, ui, emit, buildingAt, isDirected }: I
 
   const end = (e: PointerEvent, cancelled: boolean): void => {
     pts.delete(e.pointerId);
-    if (mode.kind === 'pending' && !cancelled) act(mode.tile, false);
+    if (!cancelled) {
+      if (mode.kind === 'pending') {
+        tap(mode.tile, mode.remove);
+        if (mode.mouse) d.commit();
+      } else if (mode.kind === 'line' && mode.mouse) {
+        d.commit();
+      }
+    }
     if (pts.size === 0) mode = { kind: 'idle' };
     else if (mode.kind !== 'idle') mode = { kind: 'done' };
   };
