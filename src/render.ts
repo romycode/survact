@@ -8,7 +8,7 @@
 //     extruded prisms, enemies), sorted back-to-front by x + y.
 
 import { Camera } from './camera';
-import { BELT_TICKS, BUILDINGS, Building, DAY, isBelt, DIR_X, DIR_Y, FURNACE, Item, MAP, TURRET, type Placeable } from './sim/defs';
+import { BELT_TICKS, BUILDINGS, Building, DAY, isBelt, DIR_X, DIR_Y, Item, MAP, TURRET, type Placeable } from './sim/defs';
 import { NO_NEXT } from './sim/flowfield';
 import { key, kx, ky, type Tile } from './sim/grid';
 import { Ground } from './sim/terrain';
@@ -378,12 +378,15 @@ function drawBanks(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v: 
 type Drawable = { depth: number; draw: () => void };
 
 function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui: UiState, alpha: number, v: View): void {
+  for (const sh of world.shots) {
+    turretAim.set(key(Math.floor(sh.fromX), Math.floor(sh.fromY)), Math.atan2(sh.toY - sh.fromY, sh.toX - sh.fromX));
+  }
   const list: Drawable[] = [];
   for (const [k, t] of world.grid.tiles) {
     if (isBelt(t.b) || !inView(k, v)) continue;
     const x = kx(k);
     const y = ky(k);
-    list.push({ depth: x + y + 1, draw: () => drawBuilding(ctx, cam, x, y, t) });
+    list.push({ depth: x + y + 1, draw: () => drawBuilding(ctx, cam, x, y, t, world.tickCount) });
   }
   for (const e of world.enemies) {
     const ex = lerp(e.prevX, e.x, alpha);
@@ -409,55 +412,145 @@ function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
   for (const d of list) d.draw();
 }
 
-const HEIGHT: Partial<Record<Building, number>> = {
-  [Building.Core]: 1.1,
-  [Building.Wall]: 0.6,
-  [Building.Miner]: 0.5,
-  [Building.Furnace]: 0.7,
-  [Building.Turret]: 0.3,
+/** Top of each building's silhouette (shadows, bars, icon framing). */
+export const HEIGHT: Partial<Record<Building, number>> = {
+  [Building.Core]: 1.6,
+  [Building.Wall]: 0.62,
+  [Building.Miner]: 1.05,
+  [Building.Furnace]: 1.15,
+  [Building.Turret]: 0.6,
 };
 
-function drawBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, t: Tile): void {
-  const h = HEIGHT[t.b] ?? 0.5;
+/** Last aim angle per turret (render-side only, from the shots it fired). */
+const turretAim = new Map<number, number>();
+
+function drawBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, t: Tile, time = 0): void {
+  const cx = x + 0.5;
+  const cy = y + 0.5;
   switch (t.b) {
     case Building.Core: {
-      prism(ctx, cam, x + 0.06, y + 0.06, x + 0.94, y + 0.94, 0, h, C.core);
-      // Glowing inset on top
-      quad(ctx, cam, [[x + 0.3, y + 0.3, h], [x + 0.7, y + 0.3, h], [x + 0.7, y + 0.7, h], [x + 0.3, y + 0.7, h]], '#bfe4ff');
+      // Stepped plinth + floating octahedral crystal.
+      prism(ctx, cam, x + 0.04, y + 0.04, x + 0.96, y + 0.96, 0, 0.16, '#2c4a6b');
+      prism(ctx, cam, x + 0.17, y + 0.17, x + 0.83, y + 0.83, 0.16, 0.3, '#3a6894');
+      const bob = 0.05 * Math.sin(time / 28);
+      const w = 0.24;
+      const zb = 0.42 + bob;
+      const zm = 0.86 + bob;
+      const zt = 1.55 + bob;
+      // lower half (S, E faces), then upper half
+      tri(ctx, cam, [x + 0.5 - w, cy + w, zm], [cx + w, cy + w, zm], [cx, cy, zb], shade(C.core, 0.55));
+      tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zb], shade(C.core, 0.7));
+      tri(ctx, cam, [cx - w, cy + w, zm], [cx + w, cy + w, zm], [cx, cy, zt], shade(C.core, 0.85));
+      tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zt], '#9ad6ff');
       break;
     }
-    case Building.Wall:
-      prism(ctx, cam, x + 0.04, y + 0.04, x + 0.96, y + 0.96, 0, h, C.wall);
+    case Building.Wall: {
+      // Block with battlements.
+      prism(ctx, cam, x + 0.03, y + 0.03, x + 0.97, y + 0.97, 0, 0.42, C.wall);
+      const m = 0.26;
+      const z0 = 0.42;
+      const z1 = 0.62;
+      prism(ctx, cam, x + 0.05, y + 0.05, x + 0.05 + m, y + 0.05 + m, z0, z1, C.wall);
+      prism(ctx, cam, x + 0.95 - m, y + 0.05, x + 0.95, y + 0.05 + m, z0, z1, C.wall);
+      prism(ctx, cam, x + 0.05, y + 0.95 - m, x + 0.05 + m, y + 0.95, z0, z1, C.wall);
+      prism(ctx, cam, x + 0.95 - m, y + 0.95 - m, x + 0.95, y + 0.95, z0, z1, C.wall);
       break;
-    case Building.Miner:
-      prism(ctx, cam, x + 0.1, y + 0.1, x + 0.9, y + 0.9, 0, h, C.miner);
-      raisedArrow(ctx, cam, x + 0.5, y + 0.5, h, t.dir, 0.28, '#3a2416');
+    }
+    case Building.Miner: {
+      // Base plate, output chute, pyramid drill tower.
+      prism(ctx, cam, x + 0.08, y + 0.08, x + 0.92, y + 0.92, 0, 0.2, '#6e4a31');
+      const front = t.dir === 0 || t.dir === 1;
+      if (!front) chute(ctx, cam, cx, cy, t.dir);
+      const working = t.cd > 0;
+      const zTop = 1.0 + (working ? 0.03 * Math.sin(time / 3) : 0);
+      pyramid(ctx, cam, x + 0.2, y + 0.2, x + 0.8, y + 0.8, 0.2, [cx, cy, zTop], C.miner);
+      // Pulley at the apex
+      const [px, py] = cam.project(cx, cy, zTop);
+      ctx.fillStyle = working ? '#f5c451' : '#4a3020';
+      ctx.beginPath();
+      ctx.arc(px, py, Math.max(1.5, cam.scale * 0.045), 0, Math.PI * 2);
+      ctx.fill();
+      if (front) chute(ctx, cam, cx, cy, t.dir);
       break;
+    }
     case Building.Furnace: {
-      prism(ctx, cam, x + 0.08, y + 0.08, x + 0.92, y + 0.92, 0, h, C.furnace);
+      // Brick body, chimney at the back corner, glowing mouth on the output side.
+      prism(ctx, cam, x + 0.08, y + 0.08, x + 0.92, y + 0.92, 0, 0.55, C.furnace);
+      prism(ctx, cam, x + 0.14, y + 0.14, x + 0.36, y + 0.36, 0.55, 1.15, '#7d3518');
+      furnaceMouth(ctx, cam, x, y, t, t.cd > 0 ? C.furnaceHot : '#2a1006');
+      raisedArrow(ctx, cam, cx + 0.12, cy + 0.12, 0.55, t.dir, 0.16, '#3b1607');
       if (t.cd > 0) {
-        const f = 1 - t.cd / FURNACE.ticksPerPlate;
-        const r = 0.12 + 0.12 * f;
-        quad(ctx, cam, [[x + 0.5 - r, y + 0.5 - r, h], [x + 0.5 + r, y + 0.5 - r, h], [x + 0.5 + r, y + 0.5 + r, h], [x + 0.5 - r, y + 0.5 + r, h]], C.furnaceHot);
+        // Smoke puffs
+        for (let i = 0; i < 3; i++) {
+          const ph = (time / 50 + i / 3) % 1;
+          const [sx, sy] = cam.project(x + 0.25 - ph * 0.15, y + 0.25 - ph * 0.15, 1.2 + ph * 0.7);
+          ctx.fillStyle = `rgba(160,160,170,${(0.45 * (1 - ph)).toFixed(3)})`;
+          ctx.beginPath();
+          ctx.arc(sx, sy, cam.scale * (0.05 + 0.07 * ph), 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
-      raisedArrow(ctx, cam, x + 0.5, y + 0.5, h, t.dir, 0.3, '#3b1607');
       break;
     }
     case Building.Turret: {
-      prism(ctx, cam, x + 0.12, y + 0.12, x + 0.88, y + 0.88, 0, h, C.turretBase);
+      // Round base, rotating head, barrel towards the last target.
+      cylinder(ctx, cam, cx, cy, 0, 0.24, 0.38, C.turretBase);
+      const aim = turretAim.get(key(x, y)) ?? Math.PI / 4;
       const empty = t.ammo === 0;
-      cylinder(ctx, cam, x + 0.5, y + 0.5, h, h + 0.35, 0.3, empty ? '#7a6a3a' : C.turret);
+      const head = empty ? '#7a6a3a' : C.turret;
+      const bx = cx + Math.cos(aim) * 0.48;
+      const by = cy + Math.sin(aim) * 0.48;
+      const barrelFront = Math.cos(aim) + Math.sin(aim) > 0;
+      const barrel = () => {
+        const [ax, ay] = cam.project(cx, cy, 0.42);
+        const [ex, ey] = cam.project(bx, by, 0.44);
+        ctx.strokeStyle = '#3b3a36';
+        ctx.lineCap = 'round';
+        ctx.lineWidth = Math.max(2, cam.scale * 0.075);
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(ex, ey);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+      };
+      if (!barrelFront) barrel();
+      cylinder(ctx, cam, cx, cy, 0.24, 0.5, 0.24, head);
+      if (barrelFront) barrel();
       if (empty) {
-        const [sx, sy] = cam.project(x + 0.5, y + 0.5, h + 0.35);
+        const [sx, sy] = cam.project(cx, cy, 0.5);
         ctx.strokeStyle = C.noAmmo;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.ellipse(sx, sy, 0.3 * cam.scale * 0.707, 0.3 * cam.scale * 0.354, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx, sy, 0.24 * cam.scale * 0.707, 0.24 * cam.scale * 0.354, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
       break;
     }
   }
+}
+
+/** Glowing furnace mouth on the face it outputs through (or the top edge if that face is hidden). */
+function furnaceMouth(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, t: Tile, color: string): void {
+  const cx = x + 0.5;
+  const cy = y + 0.5;
+  const z0 = 0.1;
+  const z1 = 0.34;
+  if (t.dir === 0) quad(ctx, cam, [[x + 0.92, cy - 0.17, z0], [x + 0.92, cy + 0.17, z0], [x + 0.92, cy + 0.17, z1], [x + 0.92, cy - 0.17, z1]], color);
+  else if (t.dir === 1) quad(ctx, cam, [[cx - 0.17, y + 0.92, z0], [cx + 0.17, y + 0.92, z0], [cx + 0.17, y + 0.92, z1], [cx - 0.17, y + 0.92, z1]], color);
+  else if (t.dir === 2) quad(ctx, cam, [[x + 0.1, cy - 0.17, 0.55], [x + 0.3, cy - 0.17, 0.55], [x + 0.3, cy + 0.17, 0.55], [x + 0.1, cy + 0.17, 0.55]], color);
+  else quad(ctx, cam, [[cx - 0.17, y + 0.1, 0.55], [cx + 0.17, y + 0.1, 0.55], [cx + 0.17, y + 0.3, 0.55], [cx - 0.17, y + 0.3, 0.55]], color);
+}
+
+/** Miner's output chute: a short box from the centre towards the output side. */
+function chute(ctx: CanvasRenderingContext2D, cam: Camera, cx: number, cy: number, d: number): void {
+  const fx = DIR_X[d];
+  const fy = DIR_Y[d];
+  const w = 0.11;
+  const ax = cx + fx * 0.2;
+  const ay = cy + fy * 0.2;
+  const bx = cx + fx * 0.5;
+  const by = cy + fy * 0.5;
+  prism(ctx, cam, Math.min(ax, bx) - (fx ? 0 : w), Math.min(ay, by) - (fy ? 0 : w), Math.max(ax, bx) + (fx ? 0 : w), Math.max(ay, by) + (fy ? 0 : w), 0.12, 0.3, '#4a3020');
 }
 
 function drawEnemy(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, _e: Enemy): void {
@@ -495,7 +588,7 @@ function drawShotsAndBars(ctx: CanvasRenderingContext2D, world: World, cam: Came
   for (const [k, t] of world.grid.tiles) {
     if (!inView(k, v)) continue;
     const max = BUILDINGS[t.b].hp;
-    const top = (HEIGHT[t.b] ?? 0) + (t.b === Building.Turret ? 0.35 : 0);
+    const top = HEIGHT[t.b] ?? 0;
     const [sx, sy] = cam.project(kx(k) + 0.5, ky(k) + 0.5, top);
     if (t.hp < max) bar(ctx, sx - w / 2, sy - 12, w, 4, t.hp / max, C.hpFg);
     if (t.b === Building.Turret && t.ammo > 0) bar(ctx, sx - w / 2, sy - 7, w, 3, t.ammo / TURRET.maxAmmo, C.turret);
@@ -521,6 +614,26 @@ function quad(ctx: CanvasRenderingContext2D, cam: Camera, pts: P3[], color: stri
   });
   ctx.closePath();
   ctx.fill();
+}
+
+function tri(ctx: CanvasRenderingContext2D, cam: Camera, a: P3, b: P3, c: P3, color: string): void {
+  quad(ctx, cam, [a, b, c], color);
+}
+
+/** Square pyramid; only the faces the viewer sees (+y, +x). */
+function pyramid(
+  ctx: CanvasRenderingContext2D,
+  cam: Camera,
+  x0: number,
+  y0: number,
+  x1: number,
+  y1: number,
+  z0: number,
+  apex: P3,
+  base: string,
+): void {
+  tri(ctx, cam, [x0, y1, z0], [x1, y1, z0], apex, shade(base, 0.62));
+  tri(ctx, cam, [x1, y0, z0], [x1, y1, z0], apex, shade(base, 0.85));
 }
 
 /** Axis-aligned box; only the three faces the viewer sees (+y, +x, top). */
@@ -660,7 +773,7 @@ function drawShadows(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v
   ctx.beginPath();
   for (const [k, tile] of world.grid.tiles) {
     if (isBelt(tile.b) || !inView(k, v)) continue;
-    const h = (HEIGHT[tile.b] ?? 0.5) + (tile.b === Building.Turret ? 0.35 : 0);
+    const h = HEIGHT[tile.b] ?? 0.5;
     const x = kx(k);
     const y = ky(k);
     const c: [number, number][] = [
@@ -766,8 +879,7 @@ function drawLighting(
     if (t.b !== Building.Furnace || t.cd <= 0 || !inView(k, v)) continue;
     const x = kx(k);
     const y = ky(k);
-    const h = HEIGHT[Building.Furnace]!;
-    quad(ctx, cam, [[x + 0.38, y + 0.38, h], [x + 0.62, y + 0.38, h], [x + 0.62, y + 0.62, h], [x + 0.38, y + 0.62, h]], C.furnaceHot);
+    furnaceMouth(ctx, cam, x, y, t, C.furnaceHot);
   }
   ctx.fillStyle = '#ffe066';
   const eye = Math.max(1.5, cam.scale * 0.03);
@@ -841,8 +953,9 @@ export function drawToolIcon(canvas: HTMLCanvasElement, tool: Exclude<Tool, 'sel
   const h = HEIGHT[b] ?? 0;
   const cam = new Camera();
   cam.resize(size, sizeH);
-  cam.scale = Math.min(size * 0.92, sizeH * 1.3);
-  cam.centerOn(0.5 - h / 2.2, 0.5 - h / 2.2);
+  // Fit diamond + height: vertical extent is s·(1+h)/2.
+  cam.scale = Math.min(size * 0.92, (sizeH * 1.84) / (1 + h));
+  cam.centerOn(0.5 - h / 2, 0.5 - h / 2);
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, size, sizeH);

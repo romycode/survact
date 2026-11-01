@@ -24,14 +24,14 @@ export const supportsHtmlInCanvas =
   typeof CanvasRenderingContext2D !== 'undefined' && 'drawElementImage' in CanvasRenderingContext2D.prototype;
 
 const RAISE: Partial<Record<Building, number>> = {
-  [Building.Core]: 1.1,
-  [Building.Wall]: 0.6,
-  [Building.Miner]: 0.5,
-  [Building.Furnace]: 0.7,
-  [Building.Turret]: 0.65,
+  [Building.Core]: 1.6,
+  [Building.Wall]: 0.62,
+  [Building.Miner]: 1.05,
+  [Building.Furnace]: 1.15,
+  [Building.Turret]: 0.6,
   [Building.Belt]: 0.05,
   [Building.FastBelt]: 0.05,
-};
+}
 
 export class Inspector {
   mode: 'canvas' | 'overlay';
