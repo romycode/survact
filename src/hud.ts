@@ -102,7 +102,7 @@ export class Hud {
     apply();
   }
 
-  sync(world: World, paused: boolean): void {
+  sync(world: World, paused: boolean, rot = 0): void {
     const { el, ui, plans } = this;
     const iron = String(world.inv[Item.Iron]);
     const plate = String(world.inv[Item.Plate]);
@@ -171,12 +171,12 @@ export class Hud {
           .filter(Boolean)
           .join(' · ')
       : '';
-    const ctxSig = [showCtx, hasPlans, showRot, ui.tool, cost, planText, ev?.okCount, ui.dir].join('|');
+    const ctxSig = [showCtx, hasPlans, showRot, ui.tool, cost, planText, ev?.okCount, ui.dir, rot].join('|');
     this.set('ctx', ctxSig, () => {
       el.ctx.hidden = !showCtx;
       el.ctxPlans.hidden = !hasPlans;
       el.ctxRot.hidden = !showRot;
-      el.dir.textContent = ARROWS[ui.dir];
+      el.dir.textContent = ARROWS[(ui.dir + rot) & 3];
       if (hasPlans) {
         el.ctxName.textContent = info?.name ?? 'Planos';
         el.ctxDesc.textContent = planText;

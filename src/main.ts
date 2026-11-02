@@ -125,6 +125,13 @@ function handleKey(code: string): boolean {
     case 'KeyC':
       cam.centerOn(0.5, 0.5);
       break;
+    case 'Period':
+    case 'KeyV':
+      cam.rotate(1);
+      break;
+    case 'Comma':
+      cam.rotate(-1);
+      break;
     case 'KeyR':
       if (world.phase === 'lost') {
         world = newWorld();
@@ -184,7 +191,7 @@ function frame(now: number): void {
   render(ctx, world, cam, ui, acc / DT, dpr, cssW, cssH);
   inspector.update(world, cam, ui);
   inspector.draw(ctx, dpr, cssW, cssH);
-  hud.sync(world, paused);
+  hud.sync(world, paused, cam.rot);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);

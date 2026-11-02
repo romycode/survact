@@ -26,7 +26,7 @@ type Mode =
   | { kind: 'pending'; tile: Tile; sx: number; sy: number; mouse: boolean; remove: boolean }
   | { kind: 'line'; start: Tile; last: Tile; saved: Map<number, Plan | undefined>; mouse: boolean; remove: boolean }
   | { kind: 'pan'; x: number; y: number }
-  | { kind: 'gesture'; d0: number; scale0: number; anchor: [number, number] }
+  | { kind: 'gesture'; d0: number; scale0: number; anchor: [number, number]; ang0: number }
   | { kind: 'done' }; // ignore until all pointers lift
 
 export interface InputDeps {
@@ -41,6 +41,7 @@ export interface InputDeps {
   phase: () => Phase;
   /** Mouse strokes/clicks build immediately. */
   commit: () => void;
+  onRotate?: () => void;
 }
 
 const TOUCH_SLOP = 10;
@@ -177,6 +178,7 @@ export function attachInput(d: InputDeps): void {
         d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
         scale0: cam.scale,
         anchor: cam.toWorld((a.x + b.x) / 2, (a.y + b.y) / 2),
+        ang0: Math.atan2(b.y - a.y, b.x - a.x),
       };
     }
   });
@@ -228,7 +230,20 @@ export function attachInput(d: InputDeps): void {
         if (pts.size < 2) return;
         const [a, b] = [...pts.values()];
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
-        cam.zoomTo((mode.scale0 * dist) / mode.d0, mode.anchor, (a.x + b.x) / 2, (a.y + b.y) / 2);
+        const mx = (a.x + b.x) / 2;
+        const my = (a.y + b.y) / 2;
+        // Twist two fingers past ~50° to turn the view a quarter turn.
+        const ang = Math.atan2(b.y - a.y, b.x - a.x);
+        let dAng = ang - mode.ang0;
+        if (dAng > Math.PI) dAng -= Math.PI * 2;
+        if (dAng < -Math.PI) dAng += Math.PI * 2;
+        if (Math.abs(dAng) > 0.87) {
+          cam.rotate(dAng > 0 ? 1 : -1);
+          mode.ang0 = ang;
+          mode.anchor = cam.toWorld(mx, my);
+          d.onRotate?.();
+        }
+        cam.zoomTo((mode.scale0 * dist) / mode.d0, mode.anchor, mx, my);
         return;
       }
       case 'done':

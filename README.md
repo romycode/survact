@@ -35,7 +35,8 @@ Construcción por **planos**: lo que tocas o arrastras queda como fantasma (azul
 - Cinta/Rápida/Muro/Quitar: arrastrar traza una **L limpia** desde donde empezaste; las cintas salen con dirección y esquina.
 - Minero/Horno/Torreta: tocar = plano; tocar el plano otra vez lo gira (o lo quita si no tiene dirección).
 - Teclado: `1`–`6` herramientas · `X` quitar · `Q` soltar · `E` girar · `C` centrar · `Espacio` llamar oleada · `P` pausa · `F` velocidad · `WASD` cámara.
-- Dos dedos: zoom + mover · rueda + botón central.
+- Dos dedos: zoom + mover; **girarlos** rota la vista 90° · rueda + botón central.
+- **Rotar vista:** botón ⟳, `V` / `.` (horario) y `,` (antihorario). Los edificios se dibujan en espacio de vista, así que siempre se ven sus caras frontales.
 
 ## HTML dentro del canvas
 
@@ -49,7 +50,7 @@ En el resto (Safari, Firefox, Chrome estable) la misma ficha es un overlay ancla
 src/
   main.ts            loop de timestep fijo (60 ticks), teclado/botones → cola de comandos
   hud.ts             HUD en DOM: chips, oleada, dock, tira de contexto, fin de partida
-  camera.ts          proyección isométrica, zoom/pan, picking inverso
+  camera.ts          proyección isométrica con rotación de 90°, zoom/pan, picking inverso
   input.ts           punteros: tap / línea en L / pan / pinch, sobre planos
   plans.ts           planos fantasma: validez, coste acumulado, commit a comandos
   inspector.ts       ficha del edificio: HTML-in-Canvas o overlay con anchor positioning

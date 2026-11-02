@@ -16,6 +16,26 @@
 // - LRU-evicted so memory stays around a few screens' worth.
 
 import type { Camera } from './camera';
+
+/** Maps view tiles to world tiles for a given rotation (the camera does this). */
+export interface ViewMap {
+  rot: number;
+  worldTile(u: number, v: number): [number, number];
+}
+
+/** A world-space offset inside a tile, as seen in view space. */
+function rotLocal(rot: number, ox: number, oy: number): [number, number] {
+  switch (rot) {
+    case 1:
+      return [1 - oy, ox];
+    case 2:
+      return [1 - ox, 1 - oy];
+    case 3:
+      return [oy, 1 - ox];
+    default:
+      return [ox, oy];
+  }
+}
 import { Ground } from './sim/terrain';
 import type { World } from './sim/world';
 
@@ -59,8 +79,10 @@ const hash2 = (x: number, y: number, s: number) =>
   ((Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(s, 83492791)) >>> 0) / 4294967296;
 
 /**
- * Paint tiles [x0..x1]×[y0..y1] in ground coordinates (caller sets the iso
- * ground transform). `scaleCss` = CSS px per tile, for level-of-detail.
+ * Paint VIEW tiles [x0..x1]×[y0..y1] (caller sets the un-rotated iso ground
+ * transform). Everything that depends on the world (terrain, hashes, ore) is
+ * looked up through `vm`, so the same world looks the same from any side.
+ * `scaleCss` = CSS px per tile, for level-of-detail.
  */
 export function paintTerrain(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
@@ -70,14 +92,22 @@ export function paintTerrain(
   x1: number,
   y1: number,
   scaleCss: number,
+  vm: ViewMap,
 ): void {
   const { terrain } = world;
+  const rot = vm.rot;
+  const wt = (u: number, v: number) => vm.worldTile(u, v);
   const gpx = 2 / scaleCss; // ~1 CSS px in ground units
   const W = x1 - x0 + 1;
   const H = y1 - y0 + 1;
   // One terrain lookup per tile (plus a 1-tile border for edges), reused by every layer.
   const g = new Uint8Array((W + 1) * (H + 1));
-  for (let y = y0 - 1; y <= y1; y++) for (let x = x0 - 1; x <= x1; x++) g[(y - y0 + 1) * (W + 1) + (x - x0 + 1)] = terrain.at(x, y);
+  for (let y = y0 - 1; y <= y1; y++) {
+    for (let x = x0 - 1; x <= x1; x++) {
+      const [wx, wy] = wt(x, y);
+      g[(y - y0 + 1) * (W + 1) + (x - x0 + 1)] = terrain.at(wx, wy);
+    }
+  }
   const at = (x: number, y: number) => g[(y - y0 + 1) * (W + 1) + (x - x0 + 1)];
 
   // Grass checker
@@ -98,10 +128,10 @@ export function paintTerrain(
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         if (at(x, y) !== Ground.Land) continue;
-        const r = hash2(x, y, 1);
+        const [wx, wy] = wt(x, y);
+        const r = hash2(wx, wy, 1);
         if (r > 0.3) continue;
-        const ox = 0.2 + hash2(x, y, 2) * 0.6;
-        const oy = 0.2 + hash2(x, y, 3) * 0.6;
+        const [ox, oy] = rotLocal(rot, 0.2 + hash2(wx, wy, 2) * 0.6, 0.2 + hash2(wx, wy, 3) * 0.6);
         if (r < 0.06) {
           flowers.push([x + ox, y + oy, r < 0.03]);
         } else {
@@ -137,7 +167,9 @@ export function paintTerrain(
   ctx.beginPath();
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
-      if (at(x, y) !== Ground.Water || hash2(x, y, 7) > 0.3) continue;
+      if (at(x, y) !== Ground.Water) continue;
+      const [wx, wy] = wt(x, y);
+      if (hash2(wx, wy, 7) > 0.3) continue;
       ctx.moveTo(x + 0.25, y + 0.55);
       ctx.quadraticCurveTo(x + 0.4, y + 0.4, x + 0.55, y + 0.55);
     }
@@ -185,14 +217,14 @@ export function paintTerrain(
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       if (at(x, y) !== Ground.Ore) continue;
-      const n = oreNuggets(world.oreLeft(x, y));
+      const [wx, wy] = wt(x, y);
+      const n = oreNuggets(world.oreLeft(wx, wy));
       if (n === 0) continue;
       ctx.fillStyle = T.oreGround;
       ctx.fillRect(x, y, 1.01, 1.01);
       for (let k = 0; k < n; k++) {
-        const ox = 0.22 + hash2(x, y, 10 + k) * 0.56;
-        const oy = 0.22 + hash2(x, y, 20 + k) * 0.56;
-        const r = 0.09 + Math.floor(hash2(x, y, 30 + k) * 4) * 0.025;
+        const [ox, oy] = rotLocal(rot, 0.22 + hash2(wx, wy, 10 + k) * 0.56, 0.22 + hash2(wx, wy, 20 + k) * 0.56);
+        const r = 0.09 + Math.floor(hash2(wx, wy, 30 + k) * 4) * 0.025;
         ctx.fillStyle = T.ore;
         ctx.strokeStyle = T.ink;
         ctx.lineWidth = 1.6 * gpx;
@@ -256,6 +288,7 @@ export class TerrainCache {
   private frame = 0;
   private lastScale = 0;
   private stillFrames = 0;
+  private rot = -1;
   /** Stats for the debug handle. */
   stats = { drawn: 0, painted: 0, cached: 0 };
 
@@ -264,10 +297,11 @@ export class TerrainCache {
    * the caller then paints the (few) visible tiles directly.
    */
   draw(ctx: CanvasRenderingContext2D, world: World, cam: Camera, dpr: number, cssW: number, cssH: number): boolean {
-    if (world !== this.world) {
+    if (world !== this.world || cam.rot !== this.rot) {
       for (const c of this.chunks.values()) if ('close' in c.image) (c.image as ImageBitmap).close();
       this.chunks.clear();
       this.world = world;
+      this.rot = cam.rot;
     }
     this.frame++;
     const dev = cam.scale * dpr;
@@ -277,7 +311,8 @@ export class TerrainCache {
     const settled = this.stillFrames >= SETTLE_FRAMES;
     let budget = REPAINT_BUDGET;
 
-    const v = cam.visible();
+    // Chunks live in VIEW space: each one is a screen-aligned diamond.
+    const v = cam.visibleView();
     const cx0 = Math.floor(v.x0 / CHUNK);
     const cy0 = Math.floor(v.y0 / CHUNK);
     const cx1 = Math.floor(v.x1 / CHUNK);
@@ -295,7 +330,7 @@ export class TerrainCache {
         const cy = s - cx;
         if (cy < cy0 || cy > cy1) continue;
         // Screen bbox of the chunk diamond (device px), culled against the screen.
-        const [tx, ty] = cam.project(cx * CHUNK, cy * CHUNK, 0);
+        const [tx, ty] = cam.projectView(cx * CHUNK, cy * CHUNK, 0);
         const half = CHUNK * dev * 0.5;
         const left = tx * dpr - half;
         const top = ty * dpr;
@@ -309,7 +344,7 @@ export class TerrainCache {
         // the zoom settles, then re-paint within the per-frame budget.
         if (!c || (stale && settled && budget > 0)) {
           if (c) budget--;
-          c = this.paint(world, cx, cy, dev, dpr, c);
+          c = this.paint(world, cam, cx, cy, dev, dpr, c);
           this.chunks.set(id, c);
           painted++;
         }
@@ -337,7 +372,7 @@ export class TerrainCache {
     return s;
   }
 
-  private paint(world: World, cx: number, cy: number, scale: number, dpr: number, prev?: Chunk): Chunk {
+  private paint(world: World, vm: ViewMap, cx: number, cy: number, scale: number, dpr: number, prev?: Chunk): Chunk {
     const S = scale;
     const pad = Math.ceil(S * 0.5);
     const w = Math.ceil(CHUNK * S + 2 * pad);
@@ -350,12 +385,15 @@ export class TerrainCache {
     g.clearRect(0, 0, w, h);
     // Ground transform with the chunk's top vertex at (pad + CHUNK*S/2, pad).
     g.setTransform(S / 2, S / 4, -S / 2, S / 4, pad + (CHUNK * S) / 2 - ((x0 - y0) * S) / 2, pad - ((x0 + y0) * S) / 4);
-    paintTerrain(g, world, x0, y0, x0 + CHUNK - 1, y0 + CHUNK - 1, S / dpr);
+    paintTerrain(g, world, x0, y0, x0 + CHUNK - 1, y0 + CHUNK - 1, S / dpr, vm);
 
     const ore: [number, number][] = prev?.ore ?? [];
     if (!prev) {
       for (let y = y0; y < y0 + CHUNK; y++) {
-        for (let x = x0; x < x0 + CHUNK; x++) if (world.terrain.at(x, y) === Ground.Ore) ore.push([x, y]);
+        for (let x = x0; x < x0 + CHUNK; x++) {
+          const [wx, wy] = vm.worldTile(x, y);
+          if (world.terrain.at(wx, wy) === Ground.Ore) ore.push([wx, wy]);
+        }
       }
     }
     // Snapshot to an ImageBitmap where possible: drawing a live canvas can
