@@ -86,6 +86,7 @@ export class Hud {
     }
     this.drawIcons();
     addEventListener('resize', () => this.drawIcons());
+    document.fonts?.ready.then(() => this.drawIcons());
   }
 
   drawIcons(): void {

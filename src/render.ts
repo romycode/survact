@@ -42,50 +42,60 @@ export interface UiState {
   planEval: PlanEval | null;
 }
 
+// Cartoon palette: saturated, warm, two-tone shading + dark ink outlines.
 const C = {
-  bg: '#07090c',
-  land: '#1a1f27',
-  landAlt: '#1d232c',
-  reach: '#232a35',
-  grid: '#262d39',
-  bank: '#2a2118',
-  bankDark: '#1d1711',
-  water: '#0d2c42',
-  waterLight: '#154461',
-  ore: '#b07a50',
-  spawn: '#e5484d',
-  path: '#e5484d66',
+  ink: '#2b2340',
+  bg: '#5aa65a',
+  land: '#8fd16a',
+  landAlt: '#86c962',
+  reachTint: 'rgba(255,255,230,0.16)',
+  grid: 'rgba(43,35,64,0.07)',
+  tuft: '#5ea84a',
+  flowerA: '#fff4d6',
+  flowerB: '#ffd34d',
+  bank: '#e8c27f',
+  bankDark: '#c99a5a',
+  water: '#46c2e0',
+  waterLight: '#7fdcf0',
+  foam: '#e9fbff',
+  ore: '#7a5235',
+  oreHi: '#c08a5a',
+  oreGround: '#d4a46a',
+  spawn: '#ff4f64',
+  path: 'rgba(255,79,100,0.55)',
   core: '#4fb3ff',
-  wall: '#7b8494',
-  turretBase: '#5b5346',
-  turret: '#e0b341',
-  belt: '#2b323f',
-  fastBelt: '#2a3550',
-  fastBeltRail: '#e0b341',
-  fastBeltMark: '#9cc7ff',
+  wall: '#b9b3c9',
+  turretBase: '#8a7a6a',
+  turret: '#ffc93c',
+  belt: '#6d7287',
+  fastBelt: '#5a6fb0',
+  fastBeltRail: '#ffc93c',
+  fastBeltMark: '#d9e6ff',
   oreRich: '#d39a63',
-  oreGround: '#2b241e',
-  beltMark: '#8a94a6',
-  miner: '#9c6b4a',
-  furnace: '#b4532a',
-  furnaceHot: '#fdba74',
-  iron: '#b07a50',
-  plate: '#d4dbe5',
-  noAmmo: '#e5484d',
-  enemy: '#e5484d',
-  enemyLight: '#ff8a8d',
-  shadow: '#00000066',
-  shot: '#ffe8a3',
-  sel: '#ffe8a3',
-  hpBg: '#000000aa',
-  hpFg: '#46d37a',
-  range: '#e0b34188',
-  ok: '#46d37a66',
-  bad: '#e5484d66',
-  plan: '#4fb3ff55',
-  planEdge: '#4fb3ff',
-  planBad: '#e5484d77',
+  beltMark: '#c9cde0',
+  miner: '#d08b4f',
+  furnace: '#e8664a',
+  furnaceHot: '#ffd166',
+  iron: '#a86d43',
+  plate: '#e6ebf2',
+  noAmmo: '#ff4f64',
+  enemy: '#ff5d73',
+  enemyLight: '#ffb3be',
+  shadow: 'rgba(30,50,30,0.25)',
+  shot: '#fff2a8',
+  sel: '#fff2a8',
+  hpBg: 'rgba(43,35,64,0.75)',
+  hpFg: '#5be37f',
+  range: 'rgba(255,201,60,0.8)',
+  ok: 'rgba(91,227,127,0.45)',
+  bad: 'rgba(255,79,100,0.45)',
+  plan: 'rgba(79,179,255,0.35)',
+  planEdge: '#2f8fe0',
+  planBad: 'rgba(255,79,100,0.5)',
 };
+
+/** Outline width in CSS px for a given zoom. */
+const inkW = (cam: Camera) => Math.max(1.1, cam.scale * 0.026);
 
 interface View {
   x0: number;
@@ -128,7 +138,7 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
   const { grid, terrain } = world;
   const gpx = 2 / cam.scale; // ~1 CSS px in ground units
 
-  // Land with a subtle checker so the iso grid reads without lines.
+  // Grass with a soft checker so the iso grid reads without lines.
   for (let y = v.y0; y <= v.y1; y++) {
     for (let x = v.x0; x <= v.x1; x++) {
       if (terrain.at(x, y) === Ground.Water) continue;
@@ -136,9 +146,48 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
       ctx.fillRect(x, y, 1.01, 1.01);
     }
   }
+  // Decorations: grass tufts and little flowers, fixed per tile (pure hash).
+  if (cam.scale >= 20) {
+    ctx.lineCap = 'round';
+    ctx.lineWidth = 2.2 * gpx;
+    ctx.strokeStyle = C.tuft;
+    ctx.beginPath();
+    const flowers: [number, number, string][] = [];
+    for (let y = v.y0; y <= v.y1; y++) {
+      for (let x = v.x0; x <= v.x1; x++) {
+        if (terrain.at(x, y) !== Ground.Land || grid.tiles.has(key(x, y))) continue;
+        const h = ((x * 374761393) ^ (y * 668265263)) >>> 0;
+        const r = (h & 1023) / 1023;
+        if (r > 0.3) continue;
+        const ox = 0.2 + (((h >> 10) & 255) / 255) * 0.6;
+        const oy = 0.2 + (((h >> 18) & 255) / 255) * 0.6;
+        if (r < 0.06) {
+          flowers.push([x + ox, y + oy, r < 0.03 ? C.flowerA : C.flowerB]);
+        } else {
+          // three blades, drawn "up" in screen space = towards -x,-y on the ground
+          for (const [dx, dy] of [[-0.09, 0.02], [0, 0], [0.02, -0.09]]) {
+            ctx.moveTo(x + ox + dx, y + oy + dy);
+            ctx.lineTo(x + ox + dx - 0.1, y + oy + dy - 0.1);
+          }
+        }
+      }
+    }
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+    for (const [fx, fy, col] of flowers) {
+      ctx.fillStyle = col;
+      ctx.beginPath();
+      ctx.arc(fx, fy, 0.07, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#ff9f43';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 0.03, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
   if (world.phase !== 'lost') {
     const reach = reachSet(world);
-    ctx.fillStyle = C.reach;
+    ctx.fillStyle = C.reachTint;
     for (let y = v.y0; y <= v.y1; y++) {
       for (let x = v.x0; x <= v.x1; x++) {
         if (reach.has(key(x, y)) && terrain.at(x, y) !== Ground.Water) ctx.fillRect(x, y, 1.01, 1.01);
@@ -151,33 +200,58 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
   for (let y = v.y0; y <= v.y1; y++) {
     for (let x = v.x0; x <= v.x1; x++) {
       if (terrain.at(x, y) !== Ground.Water) continue;
-      const w = Math.sin(x * 0.9 + y * 0.6 + shimmer) > 0.6;
-      ctx.fillStyle = w ? C.waterLight : C.water;
+      ctx.fillStyle = C.water;
       ctx.fillRect(x, y, 1.01, 1.01);
+      // little wave crest
+      const ph = Math.sin(x * 0.9 + y * 0.6 + shimmer);
+      if (ph > 0.55) {
+        ctx.strokeStyle = C.waterLight;
+        ctx.lineWidth = 2.5 * gpx;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        ctx.moveTo(x + 0.25, y + 0.55);
+        ctx.quadraticCurveTo(x + 0.4, y + 0.4, x + 0.55, y + 0.55);
+        ctx.stroke();
+        ctx.lineCap = 'butt';
+      }
+    }
+  }
+  // Foam where water meets land
+  ctx.fillStyle = C.foam;
+  for (let y = v.y0; y <= v.y1; y++) {
+    for (let x = v.x0; x <= v.x1; x++) {
+      if (terrain.at(x, y) !== Ground.Water) continue;
+      const f = 0.1;
+      if (terrain.at(x - 1, y) !== Ground.Water) ctx.fillRect(x, y, f, 1);
+      if (terrain.at(x, y - 1) !== Ground.Water) ctx.fillRect(x, y, 1, f);
     }
   }
 
-  // Iron ore speckles
-  ctx.fillStyle = C.ore;
-  ctx.beginPath();
+  // Iron ore: dirt patch with outlined nuggets (more nuggets = richer)
   for (let y = v.y0; y <= v.y1; y++) {
     for (let x = v.x0; x <= v.x1; x++) {
       const left = world.oreLeft(x, y);
       if (left === 0) continue;
       ctx.fillStyle = C.oreGround;
       ctx.fillRect(x, y, 1.01, 1.01);
-      ctx.fillStyle = C.ore;
-      const n = 2 + Math.min(6, Math.round(left / 150)); // denser = richer
+      const n = 1 + Math.min(4, Math.round(left / 200));
       for (let k = 0; k < n; k++) {
         const h = ((x * 73856093) ^ (y * 19349663) ^ (k * 83492791)) >>> 0;
-        const ox = 0.18 + ((h & 255) / 255) * 0.64;
-        const oy = 0.18 + (((h >> 8) & 255) / 255) * 0.64;
-        const r = 0.07 + ((h >> 16) & 3) * 0.02;
-        ctx.moveTo(x + ox + r, y + oy);
+        const ox = 0.22 + ((h & 255) / 255) * 0.56;
+        const oy = 0.22 + (((h >> 8) & 255) / 255) * 0.56;
+        const r = 0.09 + ((h >> 16) & 3) * 0.025;
+        ctx.fillStyle = C.ore;
+        ctx.strokeStyle = C.ink;
+        ctx.lineWidth = 1.6 * gpx;
+        ctx.beginPath();
         ctx.arc(x + ox, y + oy, r, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = C.oreHi;
+        ctx.beginPath();
+        ctx.arc(x + ox - r * 0.3, y + oy - r * 0.3, r * 0.38, 0, Math.PI * 2);
+        ctx.fill();
       }
-      ctx.fill();
-      ctx.beginPath();
     }
   }
 
@@ -218,7 +292,10 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
     const period = BELT_TICKS[t.b]!;
     const phase = (world.tickCount % period) / period;
     ctx.fillStyle = fast ? C.fastBelt : C.belt;
-    ctx.fillRect(x + 0.1, y + 0.1, 0.8, 0.8);
+    ctx.fillRect(x + 0.08, y + 0.08, 0.84, 0.84);
+    ctx.strokeStyle = C.ink;
+    ctx.lineWidth = 1.6 * gpx;
+    ctx.strokeRect(x + 0.08, y + 0.08, 0.84, 0.84);
     if (fast) {
       ctx.fillStyle = C.fastBeltRail;
       ctx.fillRect(x + 0.1 + (DIR_X[t.dir] === 0 ? 0 : 0), y + 0.1, DIR_X[t.dir] === 0 ? 0.08 : 0.8, DIR_X[t.dir] === 0 ? 0.8 : 0.08);
@@ -239,15 +316,18 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
     const s = t.prog / BELT_TICKS[t.b]! - 0.5;
     const cx = kx(k) + 0.5 + DIR_X[t.dir] * s;
     const cy = ky(k) + 0.5 + DIR_Y[t.dir] * s;
+    ctx.strokeStyle = C.ink;
+    ctx.lineWidth = 1.6 * gpx;
+    ctx.beginPath();
     if (t.item === Item.Plate) {
       ctx.fillStyle = C.plate;
-      ctx.fillRect(cx - 0.16, cy - 0.16, 0.32, 0.32);
+      ctx.roundRect(cx - 0.16, cy - 0.16, 0.32, 0.32, 0.06);
     } else {
       ctx.fillStyle = C.iron;
-      ctx.beginPath();
       ctx.arc(cx, cy, 0.16, 0, Math.PI * 2);
-      ctx.fill();
     }
+    ctx.fill();
+    ctx.stroke();
   }
 
   // Plans (ghosts) on the ground
@@ -366,10 +446,10 @@ function drawBanks(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v: 
     for (let x = v.x0; x <= v.x1; x++) {
       if (terrain.at(x, y) === Ground.Water) continue;
       if (terrain.at(x, y + 1) === Ground.Water) {
-        quad(ctx, cam, [[x, y + 1, 0], [x + 1, y + 1, 0], [x + 1, y + 1, -BANK], [x, y + 1, -BANK]], C.bankDark);
+        quad(ctx, cam, [[x, y + 1, 0], [x + 1, y + 1, 0], [x + 1, y + 1, -BANK], [x, y + 1, -BANK]], C.bankDark, false);
       }
       if (terrain.at(x + 1, y) === Ground.Water) {
-        quad(ctx, cam, [[x + 1, y, 0], [x + 1, y + 1, 0], [x + 1, y + 1, -BANK], [x + 1, y, -BANK]], C.bank);
+        quad(ctx, cam, [[x + 1, y, 0], [x + 1, y + 1, 0], [x + 1, y + 1, -BANK], [x + 1, y, -BANK]], C.bank, false);
       }
     }
   }
@@ -430,8 +510,8 @@ function drawBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: 
   switch (t.b) {
     case Building.Core: {
       // Stepped plinth + floating octahedral crystal.
-      prism(ctx, cam, x + 0.04, y + 0.04, x + 0.96, y + 0.96, 0, 0.16, '#2c4a6b');
-      prism(ctx, cam, x + 0.17, y + 0.17, x + 0.83, y + 0.83, 0.16, 0.3, '#3a6894');
+      prism(ctx, cam, x + 0.04, y + 0.04, x + 0.96, y + 0.96, 0, 0.16, '#5d8fcf');
+      prism(ctx, cam, x + 0.17, y + 0.17, x + 0.83, y + 0.83, 0.16, 0.3, '#82b4ea');
       const bob = 0.05 * Math.sin(time / 28);
       const w = 0.24;
       const zb = 0.42 + bob;
@@ -441,7 +521,7 @@ function drawBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: 
       tri(ctx, cam, [x + 0.5 - w, cy + w, zm], [cx + w, cy + w, zm], [cx, cy, zb], shade(C.core, 0.55));
       tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zb], shade(C.core, 0.7));
       tri(ctx, cam, [cx - w, cy + w, zm], [cx + w, cy + w, zm], [cx, cy, zt], shade(C.core, 0.85));
-      tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zt], '#9ad6ff');
+      tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zt], '#c4ecff');
       break;
     }
     case Building.Wall: {
@@ -458,7 +538,7 @@ function drawBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: 
     }
     case Building.Miner: {
       // Base plate, output chute, pyramid drill tower.
-      prism(ctx, cam, x + 0.08, y + 0.08, x + 0.92, y + 0.92, 0, 0.2, '#6e4a31');
+      prism(ctx, cam, x + 0.08, y + 0.08, x + 0.92, y + 0.92, 0, 0.2, '#a8693e');
       const front = t.dir === 0 || t.dir === 1;
       if (!front) chute(ctx, cam, cx, cy, t.dir);
       const working = t.cd > 0;
@@ -466,17 +546,20 @@ function drawBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: 
       pyramid(ctx, cam, x + 0.2, y + 0.2, x + 0.8, y + 0.8, 0.2, [cx, cy, zTop], C.miner);
       // Pulley at the apex
       const [px, py] = cam.project(cx, cy, zTop);
-      ctx.fillStyle = working ? '#f5c451' : '#4a3020';
+      ctx.fillStyle = working ? '#ffd166' : '#7a4a2a';
       ctx.beginPath();
-      ctx.arc(px, py, Math.max(1.5, cam.scale * 0.045), 0, Math.PI * 2);
+      ctx.arc(px, py, Math.max(1.8, cam.scale * 0.05), 0, Math.PI * 2);
       ctx.fill();
+      ctx.strokeStyle = C.ink;
+      ctx.lineWidth = inkW(cam);
+      ctx.stroke();
       if (front) chute(ctx, cam, cx, cy, t.dir);
       break;
     }
     case Building.Furnace: {
       // Brick body, chimney at the back corner, glowing mouth on the output side.
       prism(ctx, cam, x + 0.08, y + 0.08, x + 0.92, y + 0.92, 0, 0.55, C.furnace);
-      prism(ctx, cam, x + 0.14, y + 0.14, x + 0.36, y + 0.36, 0.55, 1.15, '#7d3518');
+      prism(ctx, cam, x + 0.14, y + 0.14, x + 0.36, y + 0.36, 0.55, 1.15, '#b8473a');
       furnaceMouth(ctx, cam, x, y, t, t.cd > 0 ? C.furnaceHot : '#2a1006');
       raisedArrow(ctx, cam, cx + 0.12, cy + 0.12, 0.55, t.dir, 0.16, '#3b1607');
       if (t.cd > 0) {
@@ -497,19 +580,23 @@ function drawBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: 
       cylinder(ctx, cam, cx, cy, 0, 0.24, 0.38, C.turretBase);
       const aim = turretAim.get(key(x, y)) ?? Math.PI / 4;
       const empty = t.ammo === 0;
-      const head = empty ? '#7a6a3a' : C.turret;
+      const head = empty ? '#cdb98a' : C.turret;
       const bx = cx + Math.cos(aim) * 0.48;
       const by = cy + Math.sin(aim) * 0.48;
       const barrelFront = Math.cos(aim) + Math.sin(aim) > 0;
       const barrel = () => {
         const [ax, ay] = cam.project(cx, cy, 0.42);
         const [ex, ey] = cam.project(bx, by, 0.44);
-        ctx.strokeStyle = '#3b3a36';
         ctx.lineCap = 'round';
-        ctx.lineWidth = Math.max(2, cam.scale * 0.075);
+        const bw = Math.max(2, cam.scale * 0.085);
+        ctx.strokeStyle = C.ink;
+        ctx.lineWidth = bw + inkW(cam) * 2;
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(ex, ey);
+        ctx.stroke();
+        ctx.strokeStyle = '#6b6580';
+        ctx.lineWidth = bw;
         ctx.stroke();
         ctx.lineCap = 'butt';
       };
@@ -535,10 +622,10 @@ function furnaceMouth(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: 
   const cy = y + 0.5;
   const z0 = 0.1;
   const z1 = 0.34;
-  if (t.dir === 0) quad(ctx, cam, [[x + 0.92, cy - 0.17, z0], [x + 0.92, cy + 0.17, z0], [x + 0.92, cy + 0.17, z1], [x + 0.92, cy - 0.17, z1]], color);
-  else if (t.dir === 1) quad(ctx, cam, [[cx - 0.17, y + 0.92, z0], [cx + 0.17, y + 0.92, z0], [cx + 0.17, y + 0.92, z1], [cx - 0.17, y + 0.92, z1]], color);
-  else if (t.dir === 2) quad(ctx, cam, [[x + 0.1, cy - 0.17, 0.55], [x + 0.3, cy - 0.17, 0.55], [x + 0.3, cy + 0.17, 0.55], [x + 0.1, cy + 0.17, 0.55]], color);
-  else quad(ctx, cam, [[cx - 0.17, y + 0.1, 0.55], [cx + 0.17, y + 0.1, 0.55], [cx + 0.17, y + 0.3, 0.55], [cx - 0.17, y + 0.3, 0.55]], color);
+  if (t.dir === 0) quad(ctx, cam, [[x + 0.92, cy - 0.17, z0], [x + 0.92, cy + 0.17, z0], [x + 0.92, cy + 0.17, z1], [x + 0.92, cy - 0.17, z1]], color, false);
+  else if (t.dir === 1) quad(ctx, cam, [[cx - 0.17, y + 0.92, z0], [cx + 0.17, y + 0.92, z0], [cx + 0.17, y + 0.92, z1], [cx - 0.17, y + 0.92, z1]], color, false);
+  else if (t.dir === 2) quad(ctx, cam, [[x + 0.1, cy - 0.17, 0.55], [x + 0.3, cy - 0.17, 0.55], [x + 0.3, cy + 0.17, 0.55], [x + 0.1, cy + 0.17, 0.55]], color, false);
+  else quad(ctx, cam, [[cx - 0.17, y + 0.1, 0.55], [cx + 0.17, y + 0.1, 0.55], [cx + 0.17, y + 0.3, 0.55], [cx - 0.17, y + 0.3, 0.55]], color, false);
 }
 
 /** Miner's output chute: a short box from the centre towards the output side. */
@@ -550,26 +637,53 @@ function chute(ctx: CanvasRenderingContext2D, cam: Camera, cx: number, cy: numbe
   const ay = cy + fy * 0.2;
   const bx = cx + fx * 0.5;
   const by = cy + fy * 0.5;
-  prism(ctx, cam, Math.min(ax, bx) - (fx ? 0 : w), Math.min(ay, by) - (fy ? 0 : w), Math.max(ax, bx) + (fx ? 0 : w), Math.max(ay, by) + (fy ? 0 : w), 0.12, 0.3, '#4a3020');
+  prism(ctx, cam, Math.min(ax, bx) - (fx ? 0 : w), Math.min(ay, by) - (fy ? 0 : w), Math.max(ax, bx) + (fx ? 0 : w), Math.max(ay, by) + (fy ? 0 : w), 0.12, 0.3, '#7a4a2a');
 }
 
-function drawEnemy(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, _e: Enemy): void {
+function drawEnemy(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, e: Enemy): void {
   const s = cam.scale;
+  // Hop: squash at the bottom, stretch in the air.
+  const hop = Math.abs(Math.sin((x + y) * 4 + e.id));
+  const sq = 1 + (1 - hop) * 0.18;
   const [gx, gy] = cam.project(x, y, 0);
   ctx.fillStyle = C.shadow;
   ctx.beginPath();
   ctx.ellipse(gx, gy, s * 0.17, s * 0.085, 0, 0, Math.PI * 2);
   ctx.fill();
-  const [bx, by] = cam.project(x, y, 0.32);
-  const r = s * 0.15;
+  const [bx, by] = cam.project(x, y, 0.16 + hop * 0.14);
+  const rx = s * 0.17 * sq;
+  const ry = (s * 0.15) / sq;
   ctx.fillStyle = C.enemy;
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = inkW(cam);
   ctx.beginPath();
-  ctx.arc(bx, by, r, 0, Math.PI * 2);
+  // dome-shaped slime: round top, flatter bottom
+  ctx.ellipse(bx, by, rx, ry, 0, Math.PI, 0);
+  ctx.quadraticCurveTo(bx + rx, by + ry * 0.8, bx, by + ry * 0.8);
+  ctx.quadraticCurveTo(bx - rx, by + ry * 0.8, bx - rx, by);
+  ctx.closePath();
   ctx.fill();
+  ctx.stroke();
   ctx.fillStyle = C.enemyLight;
   ctx.beginPath();
-  ctx.arc(bx - r * 0.35, by - r * 0.35, r * 0.35, 0, Math.PI * 2);
+  ctx.ellipse(bx - rx * 0.4, by - ry * 0.45, rx * 0.22, ry * 0.18, -0.5, 0, Math.PI * 2);
   ctx.fill();
+  // Eyes looking where it's heading (screen space)
+  const [hx, hy] = cam.project(x + (e.x - e.prevX) * 30, y + (e.y - e.prevY) * 30, 0);
+  const look = Math.atan2(hy - gy, hx - gx);
+  const er = Math.max(1.6, s * 0.045);
+  for (const side of [-1, 1]) {
+    const ex = bx + side * rx * 0.38;
+    const ey = by - ry * 0.05;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath();
+    ctx.arc(ex, ey, er, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = C.ink;
+    ctx.beginPath();
+    ctx.arc(ex + Math.cos(look) * er * 0.4, ey + Math.sin(look) * er * 0.4, er * 0.55, 0, Math.PI * 2);
+    ctx.fill();
+  }
 }
 
 function drawShotsAndBars(ctx: CanvasRenderingContext2D, world: World, cam: Camera, alpha: number, v: View): void {
@@ -604,7 +718,7 @@ function drawShotsAndBars(ctx: CanvasRenderingContext2D, world: World, cam: Came
 
 type P3 = [number, number, number];
 
-function quad(ctx: CanvasRenderingContext2D, cam: Camera, pts: P3[], color: string): void {
+function quad(ctx: CanvasRenderingContext2D, cam: Camera, pts: P3[], color: string, outline = true): void {
   ctx.fillStyle = color;
   ctx.beginPath();
   pts.forEach(([x, y, z], i) => {
@@ -614,6 +728,12 @@ function quad(ctx: CanvasRenderingContext2D, cam: Camera, pts: P3[], color: stri
   });
   ctx.closePath();
   ctx.fill();
+  if (outline) {
+    ctx.strokeStyle = C.ink;
+    ctx.lineWidth = inkW(cam);
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
 }
 
 function tri(ctx: CanvasRenderingContext2D, cam: Camera, a: P3, b: P3, c: P3, color: string): void {
@@ -632,7 +752,7 @@ function pyramid(
   apex: P3,
   base: string,
 ): void {
-  tri(ctx, cam, [x0, y1, z0], [x1, y1, z0], apex, shade(base, 0.62));
+  tri(ctx, cam, [x0, y1, z0], [x1, y1, z0], apex, shade(base, 0.7));
   tri(ctx, cam, [x1, y0, z0], [x1, y1, z0], apex, shade(base, 0.85));
 }
 
@@ -648,8 +768,8 @@ function prism(
   z1: number,
   base: string,
 ): void {
-  quad(ctx, cam, [[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], shade(base, 0.62));
-  quad(ctx, cam, [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], shade(base, 0.8));
+  quad(ctx, cam, [[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], shade(base, 0.7));
+  quad(ctx, cam, [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], shade(base, 0.86));
   quad(ctx, cam, [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], base);
 }
 
@@ -667,16 +787,25 @@ function cylinder(
   const ry = r * cam.scale * 0.354;
   const [bx, by] = cam.project(cx, cy, z0);
   const [tx, ty] = cam.project(cx, cy, z1);
-  ctx.fillStyle = shade(base, 0.7);
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = inkW(cam);
+  ctx.fillStyle = shade(base, 0.72);
   ctx.beginPath();
   ctx.ellipse(bx, by, rx, ry, 0, 0, Math.PI);
   ctx.lineTo(tx - rx, ty);
   ctx.ellipse(tx, ty, rx, ry, 0, Math.PI, 0, true);
   ctx.closePath();
   ctx.fill();
+  ctx.stroke();
   ctx.fillStyle = base;
   ctx.beginPath();
   ctx.ellipse(tx, ty, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  // cartoon highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(tx - rx * 0.3, ty - ry * 0.25, rx * 0.35, ry * 0.3, 0, 0, Math.PI * 2);
   ctx.fill();
 }
 
@@ -695,9 +824,13 @@ function raisedArrow(
 
 function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, f: number, color: string): void {
   ctx.fillStyle = C.hpBg;
-  ctx.fillRect(x, y, w, h);
+  ctx.beginPath();
+  ctx.roundRect(x - 1, y - 1, w + 2, h + 2, (h + 2) / 2);
+  ctx.fill();
   ctx.fillStyle = color;
-  ctx.fillRect(x, y, w * Math.max(0, Math.min(1, f)), h);
+  ctx.beginPath();
+  ctx.roundRect(x, y, Math.max(h, w * Math.max(0, Math.min(1, f))), h, h / 2);
+  ctx.fill();
 }
 
 const shadeCache = new Map<string, string>();
@@ -769,7 +902,7 @@ function drawShadows(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v
   const sx = Math.cos(ang) * len;
   const sy = Math.sin(ang) * len;
 
-  ctx.fillStyle = `rgba(0,0,0,${(0.34 * light).toFixed(3)})`;
+  ctx.fillStyle = `rgba(30,50,30,${(0.24 * light).toFixed(3)})`;
   ctx.beginPath();
   for (const [k, tile] of world.grid.tiles) {
     if (isBelt(tile.b) || !inView(k, v)) continue;
@@ -833,7 +966,7 @@ function drawLighting(
   dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   dctx.globalCompositeOperation = 'source-over';
   dctx.clearRect(0, 0, cssW, cssH);
-  dctx.fillStyle = `rgba(6,10,28,${(0.8 * dark).toFixed(3)})`;
+  dctx.fillStyle = `rgba(24,22,70,${(0.72 * dark).toFixed(3)})`;
   dctx.fillRect(0, 0, cssW, cssH);
 
   const lights: { x: number; y: number; r: number; color: string | null }[] = [];
