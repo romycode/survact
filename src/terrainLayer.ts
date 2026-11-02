@@ -3,39 +3,18 @@
 // The world's ground never changes except ore running out, so instead of
 // re-painting every visible tile every frame (thousands of Map lookups,
 // fills and strokes), it's painted once per CHUNK×CHUNK block into an
-// offscreen bitmap at a quantised zoom level and blitted with one drawImage.
+// offscreen bitmap and blitted with one drawImage.
 //
 // - At rest, chunks are painted at the exact zoom and blitted 1:1 on whole
-//   pixels (crisp and the cheapest possible drawImage). While zooming they're
-//   reused scaled, and re-painted to the new zoom once the camera settles, a
-//   few per frame so there's never a spike.
+//   pixels. While zooming they're reused scaled, and re-painted to the new
+//   zoom once the camera settles, a few per frame so there's never a spike.
 // - Zoomed far in (few tiles on screen, bitmaps would be huge) it falls back
 //   to painting directly, which is cheap there.
 // - Ore chunks re-render when a tile's *visible* state changes (nugget count
 //   or depletion), checked every few frames — not on every mined unit.
 // - LRU-evicted so memory stays around a few screens' worth.
 
-import type { Camera } from './camera';
-
-/** Maps view tiles to world tiles for a given rotation (the camera does this). */
-export interface ViewMap {
-  rot: number;
-  worldTile(u: number, v: number): [number, number];
-}
-
-/** A world-space offset inside a tile, as seen in view space. */
-function rotLocal(rot: number, ox: number, oy: number): [number, number] {
-  switch (rot) {
-    case 1:
-      return [1 - oy, ox];
-    case 2:
-      return [1 - ox, 1 - oy];
-    case 3:
-      return [oy, 1 - ox];
-    default:
-      return [ox, oy];
-  }
-}
+import { DEPTH, RISE, type Camera } from './camera';
 import { Ground } from './sim/terrain';
 import type { World } from './sim/world';
 
@@ -79,10 +58,8 @@ const hash2 = (x: number, y: number, s: number) =>
   ((Math.imul(x, 374761393) ^ Math.imul(y, 668265263) ^ Math.imul(s, 83492791)) >>> 0) / 4294967296;
 
 /**
- * Paint VIEW tiles [x0..x1]×[y0..y1] (caller sets the un-rotated iso ground
- * transform). Everything that depends on the world (terrain, hashes, ore) is
- * looked up through `vm`, so the same world looks the same from any side.
- * `scaleCss` = CSS px per tile, for level-of-detail.
+ * Paint tiles [x0..x1]×[y0..y1] in ground coordinates (caller sets the
+ * ground transform). `scaleCss` = CSS px per tile, for level-of-detail.
  */
 export function paintTerrain(
   ctx: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D,
@@ -92,21 +69,15 @@ export function paintTerrain(
   x1: number,
   y1: number,
   scaleCss: number,
-  vm: ViewMap,
 ): void {
   const { terrain } = world;
-  const rot = vm.rot;
-  const wt = (u: number, v: number) => vm.worldTile(u, v);
-  const gpx = 2 / scaleCss; // ~1 CSS px in ground units
+  const gpx = 1 / scaleCss; // ~1 CSS px in ground units
   const W = x1 - x0 + 1;
   const H = y1 - y0 + 1;
   // One terrain lookup per tile (plus a 1-tile border for edges), reused by every layer.
   const g = new Uint8Array((W + 1) * (H + 1));
   for (let y = y0 - 1; y <= y1; y++) {
-    for (let x = x0 - 1; x <= x1; x++) {
-      const [wx, wy] = wt(x, y);
-      g[(y - y0 + 1) * (W + 1) + (x - x0 + 1)] = terrain.at(wx, wy);
-    }
+    for (let x = x0 - 1; x <= x1; x++) g[(y - y0 + 1) * (W + 1) + (x - x0 + 1)] = terrain.at(x, y);
   }
   const at = (x: number, y: number) => g[(y - y0 + 1) * (W + 1) + (x - x0 + 1)];
 
@@ -128,16 +99,16 @@ export function paintTerrain(
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         if (at(x, y) !== Ground.Land) continue;
-        const [wx, wy] = wt(x, y);
-        const r = hash2(wx, wy, 1);
+        const r = hash2(x, y, 1);
         if (r > 0.3) continue;
-        const [ox, oy] = rotLocal(rot, 0.2 + hash2(wx, wy, 2) * 0.6, 0.2 + hash2(wx, wy, 3) * 0.6);
+        const ox = 0.2 + hash2(x, y, 2) * 0.6;
+        const oy = 0.2 + hash2(x, y, 3) * 0.6;
         if (r < 0.06) {
           flowers.push([x + ox, y + oy, r < 0.012]);
         } else {
-          for (const [dx, dy] of [[-0.09, 0.02], [0, 0], [0.02, -0.09]]) {
-            ctx.moveTo(x + ox + dx, y + oy + dy);
-            ctx.lineTo(x + ox + dx - 0.1, y + oy + dy - 0.1);
+          for (const [dx, lean] of [[-0.07, -0.04], [0, 0], [0.07, 0.04]]) {
+            ctx.moveTo(x + ox + dx, y + oy);
+            ctx.lineTo(x + ox + dx + lean, y + oy - 0.16);
           }
         }
       }
@@ -190,48 +161,43 @@ export function paintTerrain(
   ctx.beginPath();
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
-      if (at(x, y) !== Ground.Water) continue;
-      const [wx, wy] = wt(x, y);
-      if (hash2(wx, wy, 7) > 0.3) continue;
+      if (at(x, y) !== Ground.Water || hash2(x, y, 7) > 0.3) continue;
       ctx.moveTo(x + 0.25, y + 0.55);
       ctx.quadraticCurveTo(x + 0.4, y + 0.4, x + 0.55, y + 0.55);
     }
   }
   ctx.stroke();
   ctx.lineCap = 'butt';
-  // A bank face is the land edge dropped by BANK; on the ground plane "down
-  // on screen by z" is (+z, +z) in tile coords, so it can be drawn here.
-  const B = BANK;
+  // Banks: where land lies north of water you see its front face drop down
+  // to the water (BANK high). "Down on screen by z" on the ground plane is
+  // +y by z·RISE/DEPTH, so it's just a strip. Side edges get a thin rim.
+  const B = (BANK * RISE) / DEPTH;
+  ctx.fillStyle = T.bankDark;
+  ctx.beginPath();
+  for (let y = y0; y <= y1; y++) {
+    for (let x = x0; x <= x1; x++) {
+      if (at(x, y) === Ground.Water && at(x, y - 1) !== Ground.Water) ctx.rect(x, y, 1.01, B);
+    }
+  }
+  ctx.fill();
+  ctx.fillStyle = T.bank;
+  ctx.beginPath();
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       if (at(x, y) !== Ground.Water) continue;
-      if (at(x, y - 1) !== Ground.Water) {
-        ctx.fillStyle = T.bankDark;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x + 1, y);
-        ctx.lineTo(x + 1 + B, y + B);
-        ctx.lineTo(x + B, y + B);
-        ctx.fill();
-      }
-      if (at(x - 1, y) !== Ground.Water) {
-        ctx.fillStyle = T.bank;
-        ctx.beginPath();
-        ctx.moveTo(x, y);
-        ctx.lineTo(x, y + 1);
-        ctx.lineTo(x + B, y + 1 + B);
-        ctx.lineTo(x + B, y + B);
-        ctx.fill();
-      }
+      if (at(x - 1, y) !== Ground.Water) ctx.rect(x, y, 0.06, 1.01);
+      if (at(x + 1, y) !== Ground.Water) ctx.rect(x + 0.94, y, 0.06, 1.01);
     }
   }
+  ctx.fill();
   ctx.fillStyle = T.foam;
   ctx.beginPath();
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       if (at(x, y) !== Ground.Water) continue;
-      if (at(x - 1, y) !== Ground.Water) ctx.rect(x + B, y + B, 0.08, 1 - B);
-      if (at(x, y - 1) !== Ground.Water) ctx.rect(x + B, y + B, 1 - B, 0.08);
+      if (at(x, y - 1) !== Ground.Water) ctx.rect(x, y + B, 1.01, 0.07);
+      if (at(x - 1, y) !== Ground.Water) ctx.rect(x + 0.06, y, 0.05, 1.01);
+      if (at(x + 1, y) !== Ground.Water) ctx.rect(x + 0.89, y, 0.05, 1.01);
     }
   }
   ctx.fill();
@@ -240,14 +206,14 @@ export function paintTerrain(
   for (let y = y0; y <= y1; y++) {
     for (let x = x0; x <= x1; x++) {
       if (at(x, y) !== Ground.Ore) continue;
-      const [wx, wy] = wt(x, y);
-      const n = oreNuggets(world.oreLeft(wx, wy));
+      const n = oreNuggets(world.oreLeft(x, y));
       if (n === 0) continue;
       ctx.fillStyle = T.oreGround;
       ctx.fillRect(x, y, 1.01, 1.01);
       for (let k = 0; k < n; k++) {
-        const [ox, oy] = rotLocal(rot, 0.22 + hash2(wx, wy, 10 + k) * 0.56, 0.22 + hash2(wx, wy, 20 + k) * 0.56);
-        const r = 0.09 + Math.floor(hash2(wx, wy, 30 + k) * 4) * 0.025;
+        const ox = 0.22 + hash2(x, y, 10 + k) * 0.56;
+        const oy = 0.22 + hash2(x, y, 20 + k) * 0.56;
+        const r = 0.09 + Math.floor(hash2(x, y, 30 + k) * 4) * 0.025;
         ctx.fillStyle = T.ore;
         ctx.strokeStyle = T.ink;
         ctx.lineWidth = 1.6 * gpx;
@@ -282,7 +248,7 @@ export function paintTerrain(
 type Surface = HTMLCanvasElement | OffscreenCanvas;
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
-export interface Chunk {
+interface Chunk {
   canvas: Surface;
   /** GPU-friendly snapshot of `canvas` (uploaded once, not every frame). */
   image: CanvasImageSource;
@@ -305,79 +271,34 @@ function surface(w: number, h: number): Surface {
   return c;
 }
 
-/** Where chunks get drawn: a 2D context, or the WebGL renderer. */
-export interface ChunkSink {
-  /** Transform for the whole layer, device px (identity unless mid-turn). */
-  begin(m: [number, number, number, number, number, number]): void;
-  blit(c: Chunk, dx: number, dy: number, dw: number, dh: number, pixelExact: boolean): void;
-  end(): void;
-}
-
 export class TerrainCache {
-  /** Keep chunks as canvases (WebGL uploads them itself) instead of ImageBitmaps. */
-  private readonly keepCanvas: boolean;
-  /** Called when a chunk is replaced or evicted (WebGL frees its texture). */
-  private readonly dispose?: (c: Chunk) => void;
-
-  constructor(opts: { keepCanvas?: boolean; dispose?: (c: Chunk) => void } = {}) {
-    this.keepCanvas = opts.keepCanvas ?? false;
-    this.dispose = opts.dispose;
-  }
-
   private world: World | null = null;
   private readonly chunks = new Map<number, Chunk>();
   private frame = 0;
   private lastScale = 0;
   private stillFrames = 0;
-  private rot = -1;
   /** Stats for the debug handle. */
   stats = { drawn: 0, painted: 0, cached: 0 };
 
   /**
-   * Blit visible chunks. Returns false when zoomed in past MAX_BUCKET:
+   * Blit visible chunks. Returns false when zoomed in past MAX_DEVICE_SCALE:
    * the caller then paints the (few) visible tiles directly.
    */
   draw(ctx: CanvasRenderingContext2D, world: World, cam: Camera, dpr: number, cssW: number, cssH: number): boolean {
-    return this.drawTo(
-      {
-        begin: (m) => ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]),
-        blit: (c, dx, dy, dw, dh, exact) =>
-          exact ? ctx.drawImage(c.image, Math.round(dx), Math.round(dy)) : ctx.drawImage(c.image, dx, dy, dw, dh),
-        end: () => ctx.setTransform(1, 0, 0, 1, 0, 0),
-      },
-      world,
-      cam,
-      dpr,
-      cssW,
-      cssH,
-    );
-  }
-
-  /** Visit visible chunks (painting missing/stale ones) and hand them to a sink. */
-  drawTo(sink: ChunkSink, world: World, cam: Camera, dpr: number, cssW: number, cssH: number, maxScale = MAX_DEVICE_SCALE): boolean {
-    if (world !== this.world || cam.rot !== this.rot) {
+    if (world !== this.world) {
       for (const c of this.chunks.values()) this.free(c);
       this.chunks.clear();
       this.world = world;
-      this.rot = cam.rot;
     }
     this.frame++;
-    const fullDev = cam.scale * dpr;
-    // Past maxScale: 2D paints directly (returns false); WebGL passes Infinity
-    // and instead caps the paint scale and stretches the chunk.
-    if (fullDev > maxScale) return false;
-    const dev = Math.min(fullDev, MAX_DEVICE_SCALE);
+    const dev = cam.scale * dpr;
+    if (dev > MAX_DEVICE_SCALE) return false;
     this.stillFrames = dev === this.lastScale ? this.stillFrames + 1 : 0;
     this.lastScale = dev;
     const settled = this.stillFrames >= SETTLE_FRAMES;
     let budget = REPAINT_BUDGET;
 
-    // Chunks live in K-VIEW space (the nearest quarter turn): screen-aligned
-    // diamonds. Mid-drag, the whole layer is drawn through the affine that
-    // turns the K-view ground into the real one.
-    const v = cam.visibleViewK();
-    const turning = cam.frac !== 0;
-    const [ma, mb, mc, md, me, mf] = cam.kToScreen();
+    const v = cam.visible();
     const cx0 = Math.floor(v.x0 / CHUNK);
     const cy0 = Math.floor(v.y0 / CHUNK);
     const cx1 = Math.floor(v.x1 / CHUNK);
@@ -388,18 +309,17 @@ export class TerrainCache {
     let drawn = 0;
     let painted = 0;
 
-    sink.begin([ma, mb, mc, md, me * dpr, mf * dpr]);
-    // Back to front so a chunk's bank overflow lands under its southern neighbour.
-    for (let s = cx0 + cy0; s <= cx1 + cy1; s++) {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // North to south, so a chunk's bank overflow lands under its southern neighbour.
+    for (let cy = cy0; cy <= cy1; cy++) {
       for (let cx = cx0; cx <= cx1; cx++) {
-        const cy = s - cx;
-        if (cy < cy0 || cy > cy1) continue;
-        // Screen bbox of the chunk diamond (device px), culled against the screen.
-        const [tx, ty] = cam.projectKFlat(cx * CHUNK, cy * CHUNK, 0);
-        const half = CHUNK * fullDev * 0.5;
-        const left = tx * dpr - half;
+        // Top-left corner of the chunk on screen (device px), culled against the screen.
+        const [tx, ty] = cam.project(cx * CHUNK, cy * CHUNK, 0);
+        const left = tx * dpr;
         const top = ty * dpr;
-        if (!turning && (left > W || left + 2 * half < 0 || top > H || top + half + fullDev < 0)) continue;
+        const cw = CHUNK * dev;
+        const ch = CHUNK * dev * DEPTH;
+        if (left > W || left + cw < 0 || top > H || top + ch + dev < 0) continue;
 
         const id = cx * 65536 + cy;
         let c = this.chunks.get(id);
@@ -410,29 +330,28 @@ export class TerrainCache {
         if (!c || oreDirty || (stale && settled && budget > 0)) {
           if (c && !oreDirty) budget--;
           const old = c;
-          c = this.paint(world, cam, cx, cy, dev, dpr, c);
-          if (old) this.dispose?.(old);
+          c = this.paint(world, cx, cy, dev, dpr, c);
+          if (old && old !== c) this.free(old, c);
           this.chunks.set(id, c);
           painted++;
         }
         c.used = this.frame;
-        const k = fullDev / c.scale;
-        const dx = tx * dpr - (c.pad + (CHUNK * c.scale) / 2) * k;
-        const dy = ty * dpr - c.pad * k;
-        // 1:1 on whole pixels when possible: no resampling.
-        sink.blit(c, dx, dy, c.w * k, c.h * k, k === 1 && !turning);
+        const k = dev / c.scale;
+        const dx = left - c.pad * k;
+        const dy = top - c.pad * k;
+        if (k === 1) ctx.drawImage(c.image, Math.round(dx), Math.round(dy)); // 1:1, no resampling
+        else ctx.drawImage(c.image, dx, dy, c.w * k, c.h * k);
         drawn++;
       }
     }
-    sink.end();
     this.evict(W * H * 3);
     this.stats = { drawn, painted, cached: this.chunks.size };
     return true;
   }
 
-  private free(c: Chunk): void {
+  private free(c: Chunk, next?: Chunk): void {
+    if (next && next.image === c.image) return;
     if ('close' in c.image) (c.image as ImageBitmap).close();
-    this.dispose?.(c);
   }
 
   private oreSig(world: World, c: Chunk): number {
@@ -441,40 +360,34 @@ export class TerrainCache {
     return s;
   }
 
-  private paint(world: World, vm: ViewMap, cx: number, cy: number, scale: number, dpr: number, prev?: Chunk): Chunk {
+  private paint(world: World, cx: number, cy: number, scale: number, dpr: number, prev?: Chunk): Chunk {
     const S = scale;
-    const pad = Math.ceil(S * 0.5);
+    const pad = Math.ceil(S * 0.25);
     const w = Math.ceil(CHUNK * S + 2 * pad);
-    const h = Math.ceil((CHUNK * S) / 2 + 2 * pad);
-    const canvas = !this.keepCanvas && prev && prev.canvas.width === w && prev.canvas.height === h ? prev.canvas : surface(w, h);
+    const h = Math.ceil(CHUNK * S * DEPTH + 2 * pad);
+    const canvas = prev && prev.canvas.width === w && prev.canvas.height === h ? prev.canvas : surface(w, h);
     const g = canvas.getContext('2d') as Ctx2D;
     const x0 = cx * CHUNK;
     const y0 = cy * CHUNK;
     g.setTransform(1, 0, 0, 1, 0, 0);
     g.clearRect(0, 0, w, h);
-    // Ground transform with the chunk's top vertex at (pad + CHUNK*S/2, pad).
-    g.setTransform(S / 2, S / 4, -S / 2, S / 4, pad + (CHUNK * S) / 2 - ((x0 - y0) * S) / 2, pad - ((x0 + y0) * S) / 4);
-    paintTerrain(g, world, x0, y0, x0 + CHUNK - 1, y0 + CHUNK - 1, S / dpr, vm);
+    // Ground transform with the chunk's top-left corner at (pad, pad).
+    g.setTransform(S, 0, 0, S * DEPTH, pad - x0 * S, pad - y0 * S * DEPTH);
+    paintTerrain(g, world, x0, y0, x0 + CHUNK - 1, y0 + CHUNK - 1, S / dpr);
 
     const ore: [number, number][] = prev?.ore ?? [];
     if (!prev) {
       for (let y = y0; y < y0 + CHUNK; y++) {
-        for (let x = x0; x < x0 + CHUNK; x++) {
-          const [wx, wy] = vm.worldTile(x, y);
-          if (world.terrain.at(wx, wy) === Ground.Ore) ore.push([wx, wy]);
-        }
+        for (let x = x0; x < x0 + CHUNK; x++) if (world.terrain.at(x, y) === Ground.Ore) ore.push([x, y]);
       }
     }
     // Snapshot to an ImageBitmap where possible: drawing a live canvas can
     // re-upload it to the GPU every frame; a bitmap is uploaded once.
     if (prev && 'close' in prev.image) (prev.image as ImageBitmap).close();
-    // With keepCanvas the canvas itself is the image, so a fresh one per paint
-    // (the old chunk's texture may still be alive until dispose()).
-    const image: CanvasImageSource = this.keepCanvas
-      ? canvas
-      : typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas
-        ? canvas.transferToImageBitmap()
-        : canvas;
+    // Snapshot to an ImageBitmap where possible: drawing a live canvas can
+    // re-upload it to the GPU every frame; a bitmap is uploaded once.
+    const image: CanvasImageSource =
+      typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas ? canvas.transferToImageBitmap() : canvas;
     const c: Chunk = { canvas, image, w, h, scale, pad, ore, oreSig: 0, used: this.frame };
     c.oreSig = this.oreSig(world, c);
     return c;

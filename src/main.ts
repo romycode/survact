@@ -1,5 +1,4 @@
 import { Camera } from './camera';
-import { GLRenderer } from './gl/renderer';
 import { Hud, TOOL_KEYS } from './hud';
 import { Inspector } from './inspector';
 import { attachInput } from './input';
@@ -14,21 +13,7 @@ let paused = false;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
 
-// WebGL2 when available (add ?render=2d to force the Canvas 2D renderer).
-// A canvas keeps the first context type it gets, so pick once, up front.
-const want2d = new URLSearchParams(location.search).get('render') === '2d';
-let glr: GLRenderer | null = null;
-if (!want2d) {
-  try {
-    const gl = canvas.getContext('webgl2', { alpha: false, antialias: false, stencil: true, premultipliedAlpha: true });
-    if (gl) glr = new GLRenderer(gl);
-  } catch (err) {
-    console.warn('WebGL2 no disponible, uso Canvas 2D', err);
-    glr = null;
-  }
-}
-const ctx = (glr ? null : canvas.getContext('2d')) as CanvasRenderingContext2D;
-document.body.dataset.renderer = glr ? 'webgl2' : '2d';
+const ctx = canvas.getContext('2d')!;
 const host = canvas.parentElement!;
 
 let world = newWorld();
@@ -69,7 +54,6 @@ function resize(): void {
   canvas.height = Math.round(cssH * dpr);
   canvas.style.width = `${cssW}px`;
   canvas.style.height = `${cssH}px`;
-  if (glr) glr.gl.viewport(0, 0, canvas.width, canvas.height);
   cam.resize(cssW, cssH);
 }
 new ResizeObserver(resize).observe(host);
@@ -86,7 +70,6 @@ const inspector = new Inspector(
     ui.sel = null;
   }
   },
-  !glr,
 );
 document.body.dataset.htmlInCanvas = inspector.mode === 'canvas' ? 'on' : 'off';
 
@@ -147,13 +130,6 @@ function handleKey(code: string): boolean {
     case 'KeyC':
       cam.centerOn(0.5, 0.5);
       break;
-    case 'Period':
-    case 'KeyV':
-      cam.rotate(1);
-      break;
-    case 'Comma':
-      cam.rotate(-1);
-      break;
     case 'KeyR':
       if (world.phase === 'lost') {
         world = newWorld();
@@ -194,8 +170,7 @@ for (const b of document.querySelectorAll<HTMLElement>('[data-key]')) {
 const hud = new Hud(ui, plans);
 
 function drawFrame(alpha: number): void {
-  if (glr) glr.render(world, cam, ui, alpha, dpr, cssW, cssH);
-  else render(ctx, world, cam, ui, alpha, dpr, cssW, cssH);
+  render(ctx, world, cam, ui, alpha, dpr, cssW, cssH);
 }
 
 // ---------- Fixed-timestep loop ----------
@@ -207,7 +182,6 @@ function frame(now: number): void {
   const frameDt = Math.min((now - last) / 1000, 0.25);
   acc += frameDt * speed;
   last = now;
-  cam.update(frameDt);
   while (acc >= DT) {
     for (const cmd of pending) world.apply(cmd);
     pending.length = 0;
@@ -219,8 +193,8 @@ function frame(now: number): void {
   ui.planEval = plans.size > 0 ? plans.evaluate(world) : null;
   drawFrame(acc / DT);
   inspector.update(world, cam, ui);
-  if (!glr) inspector.draw(ctx, dpr, cssW, cssH);
-  hud.sync(world, paused, cam.rot);
+  inspector.draw(ctx, dpr, cssW, cssH);
+  hud.sync(world, paused);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -234,25 +208,20 @@ requestAnimationFrame(frame);
   ui,
   inspector,
   /** Average ms per render() over n frames, for profiling. */
-  renderer: glr ? 'webgl2' : '2d',
-  /** Average ms per frame over n frames. sync=true includes GPU time (both renderers wait for the frame). */
-  benchRender(n = 60, sync = true): { renderer: string; total: number; phases: Record<string, number>; chunks: unknown } {
+  /** Average ms per frame over n frames. sync=true waits for the canvas to finish each frame. */
+  benchRender(n = 60, sync = true): { total: number; phases: Record<string, number>; chunks: unknown } {
     prof.on = true;
     prof.ms = {};
-    const px = new Uint8Array(4);
     const t0 = performance.now();
     for (let i = 0; i < n; i++) {
       drawFrame(0);
       // sync: wait for the GPU to finish the frame (reading one pixel back), for both renderers.
-      if (sync) {
-        if (glr) glr.gl.readPixels(0, 0, 1, 1, glr.gl.RGBA, glr.gl.UNSIGNED_BYTE, px);
-        else ctx.getImageData(0, 0, 1, 1);
-      }
+      if (sync) ctx.getImageData(0, 0, 1, 1);
     }
     const total = (performance.now() - t0) / n;
     prof.on = false;
     const phases: Record<string, number> = {};
     for (const [k, v] of Object.entries(prof.ms)) phases[k] = Math.round((v / n) * 100) / 100;
-    return { renderer: glr ? 'webgl2' : '2d', total: Math.round(total * 100) / 100, phases, chunks: glr ? glr.stats : terrainCache.stats };
+    return { total: Math.round(total * 100) / 100, phases, chunks: terrainCache.stats };
   },
 };

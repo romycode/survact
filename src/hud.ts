@@ -33,8 +33,8 @@ const TOOL_INFO: Record<Exclude<Tool, 'select'>, { name: string; desc: string }>
   remove: { name: 'Quitar', desc: 'Toca o arrastra · devuelve el 100%' },
 };
 
-// World dir -> arrow as seen on screen in the iso view (+x down-right, +y down-left).
-const ARROWS = ['↘', '↙', '↖', '↗'];
+// World dir -> arrow on screen (grid-aligned view: +x right, +y down).
+const ARROWS = ['→', '↓', '←', '↑'];
 
 export function costText(c: Cost): string {
   return costEntries(c)
@@ -102,7 +102,7 @@ export class Hud {
     apply();
   }
 
-  sync(world: World, paused: boolean, rot = 0): void {
+  sync(world: World, paused: boolean): void {
     const { el, ui, plans } = this;
     const iron = String(world.inv[Item.Iron]);
     const plate = String(world.inv[Item.Plate]);
@@ -171,12 +171,12 @@ export class Hud {
           .filter(Boolean)
           .join(' · ')
       : '';
-    const ctxSig = [showCtx, hasPlans, showRot, ui.tool, cost, planText, ev?.okCount, ui.dir, rot].join('|');
+    const ctxSig = [showCtx, hasPlans, showRot, ui.tool, cost, planText, ev?.okCount, ui.dir].join('|');
     this.set('ctx', ctxSig, () => {
       el.ctx.hidden = !showCtx;
       el.ctxPlans.hidden = !hasPlans;
       el.ctxRot.hidden = !showRot;
-      el.dir.textContent = ARROWS[(ui.dir + rot) & 3];
+      el.dir.textContent = ARROWS[ui.dir];
       if (hasPlans) {
         el.ctxName.textContent = info?.name ?? 'Planos';
         el.ctxDesc.textContent = planText;

@@ -7,7 +7,7 @@
 //  2. Screen space with cam.project(x, y, z): raised things (buildings as
 //     extruded prisms, enemies), sorted back-to-front by x + y.
 
-import { Camera, type Proj } from './camera';
+import { Camera, DEPTH, RISE, projAt, type Proj } from './camera';
 import { BELT_TICKS, BUILDINGS, Building, DAY, isBelt, DIR_X, DIR_Y, Item, MAP, TURRET, type Placeable } from './sim/defs';
 import { NO_NEXT } from './sim/flowfield';
 import { T, TerrainCache, paintTerrain } from './terrainLayer';
@@ -123,9 +123,8 @@ export function render(
   let t = performance.now();
   const cached = terrainCache.draw(ctx, world, cam, dpr, cssW, cssH);
   if (!cached) {
-    const vv = cam.visibleViewK();
-    cam.applyGroundViewK(ctx, dpr);
-    paintTerrain(ctx, world, vv.x0, vv.y0, vv.x1, vv.y1, cam.scale, cam);
+    cam.applyGround(ctx, dpr);
+    paintTerrain(ctx, world, v.x0, v.y0, v.x1, v.y1, cam.scale);
   }
   cam.applyGround(ctx, dpr);
   P?.('terrain', t);
@@ -408,7 +407,7 @@ interface Sprite {
   img: CanvasImageSource;
   w: number;
   h: number;
-  /** Device px of the tile's top vertex inside the sprite. */
+  /** Device px of the tile's top-left ground corner inside the sprite. */
   ax: number;
   ay: number;
 }
@@ -435,19 +434,14 @@ const sprites = {
     if (sp) return sp;
     const pad = Math.ceil(S * 0.2);
     const w = Math.ceil(S + 2 * pad);
-    const h = Math.ceil(S / 2 + (SPRITE_TOP * S) / 2 + 2 * pad);
-    const ax = pad + S / 2;
-    const ay = pad + (SPRITE_TOP * S) / 2;
+    const h = Math.ceil(S * DEPTH + SPRITE_TOP * S * RISE + 2 * pad);
+    const ax = pad;
+    const ay = pad + SPRITE_TOP * S * RISE;
     const canvas: HTMLCanvasElement | OffscreenCanvas =
       typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
     const g = canvas.getContext('2d') as CanvasRenderingContext2D;
-    // A camera whose (0,0,0) lands on (ax, ay), in device px.
-    const sc = new Camera();
-    sc.resize(w, h);
-    sc.scale = S;
-    const c0 = ((h / 2 - ay) * 2) / S;
-    sc.centerOn(c0, c0);
-    drawBuilding(g, sc, 0, 0, t, 0, aim, false);
+    // (0,0,0) — the tile's top-left ground corner — lands on (ax, ay), device px.
+    drawBuilding(g, projAt(S, ax, ay), 0, 0, t, 0, aim, false);
     const img: CanvasImageSource = canvas instanceof HTMLCanvasElement ? canvas : canvas.transferToImageBitmap();
     sp = { img, w, h, ax, ay };
     this.map.set(id, sp);
@@ -455,59 +449,27 @@ const sprites = {
   },
 };
 
-/**
- * Projector for drawing a building in K-view coords as a rigid piece placed
- * where the (possibly mid-turn) camera puts the tile's centre.
- */
-export function localProj(cam: Camera, x: number, y: number, u: number, v: number): Proj {
-  const [kx0, ky0] = cam.projectKFlat(u + 0.5, v + 0.5, 0);
-  const [sx0, sy0] = cam.project(x + 0.5, y + 0.5, 0);
-  const dx = sx0 - kx0;
-  const dy = sy0 - ky0;
-  return {
-    scale: cam.scale,
-    project: (a: number, b: number, z = 0) => {
-      const [px, py] = cam.projectKFlat(a, b, z);
-      return [px + dx, py + dy];
-    },
-  };
-}
-
-function blitBuilding(ctx: CanvasRenderingContext2D, cam: Camera, _dpr: number, x: number, y: number, t: Tile, time: number): void {
-  // Buildings are drawn in VIEW space: same faces always visible, any rotation.
-  const [u, v] = cam.viewTile(x, y);
-  const vt: Tile = BUILDINGS[t.b].directed ? { ...t, dir: cam.viewDir(t.dir) } : t;
-  const worldAim = turretAim.get(key(x, y)) ?? Math.PI / 4;
-  const viewAim = worldAim + (cam.rot * Math.PI) / 2;
-  const lp = localProj(cam, x, y, u, v);
+function blitBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, t: Tile, time: number): void {
+  const aimAngle = turretAim.get(key(x, y)) ?? Math.PI / 2;
   if (t.b === Building.Core) {
-    drawBuilding(ctx, lp, u, v, vt, time, viewAim);
+    drawBuilding(ctx, cam, x, y, t, time, aimAngle);
     return;
   }
   let aim: number | undefined;
   let variant = '';
   if (t.b === Building.Turret) {
-    const q = ((Math.round((viewAim / (Math.PI * 2)) * AIM_STEPS) % AIM_STEPS) + AIM_STEPS) % AIM_STEPS;
+    const q = ((Math.round((aimAngle / (Math.PI * 2)) * AIM_STEPS) % AIM_STEPS) + AIM_STEPS) % AIM_STEPS;
     aim = (q / AIM_STEPS) * Math.PI * 2;
     variant = `${q}${t.ammo === 0 ? 'e' : ''}`;
   } else if (t.b === Building.Furnace || t.b === Building.Miner) {
     variant = t.cd > 0 ? 'on' : 'off';
   }
-  const sp = sprites.get(vt, aim, variant);
+  const sp = sprites.get(t, aim, variant);
   const k = cam.scale / sprites.scale; // sprite device px -> CSS px
-  const [tx, ty] = lp.project(u, v, 0);
+  const [tx, ty] = cam.project(x, y, 0);
   ctx.drawImage(sp.img, tx - sp.ax * k, ty - sp.ay * k, sp.w * k, sp.h * k);
   // Live effects on top of the baked body.
-  if (t.b === Building.Furnace && t.cd > 0) {
-    for (let i = 0; i < 3; i++) {
-      const ph = (time / 50 + i / 3) % 1;
-      const [sx, sy] = lp.project(u + 0.25 - ph * 0.15, v + 0.25 - ph * 0.15, 1.2 + ph * 0.7);
-      ctx.fillStyle = `rgba(160,160,170,${(0.45 * (1 - ph)).toFixed(3)})`;
-      ctx.beginPath();
-      ctx.arc(sx, sy, cam.scale * (0.05 + 0.07 * ph), 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
+  if (t.b === Building.Furnace && t.cd > 0) smoke(ctx, cam, x, y, time);
 }
 
 function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui: UiState, alpha: number, v: View, dpr: number): void {
@@ -520,14 +482,13 @@ function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
     if (isBelt(t.b) || !inView(k, v)) continue;
     const x = kx(k);
     const y = ky(k);
-    const [u, w] = cam.toView(x + 0.5, y + 0.5);
-    list.push({ depth: u + w, draw: () => blitBuilding(ctx, cam, dpr, x, y, t, world.tickCount) });
+    // Back to front = north to south (then west to east).
+    list.push({ depth: y + 1 + x * 1e-4, draw: () => blitBuilding(ctx, cam, x, y, t, world.tickCount) });
   }
   for (const e of world.enemies) {
     const ex = lerp(e.prevX, e.x, alpha);
     const ey = lerp(e.prevY, e.y, alpha);
-    const [eu, ev] = cam.toView(ex, ey);
-    list.push({ depth: eu + ev, draw: () => drawEnemy(ctx, cam, ex, ey, e) });
+    list.push({ depth: ey + 0.5 + ex * 1e-4, draw: () => drawEnemy(ctx, cam, ex, ey, e) });
   }
   for (const [k, p] of ui.plans.map) {
     if (p.kind !== 'place' || isBelt(p.b) || !inView(k, v)) continue;
@@ -535,12 +496,11 @@ function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
     const y = ky(k);
     const ghost: Tile = { b: p.b, hp: 1, dir: p.dir, cd: 0, ammo: 1, inp: 0, out: 0, item: 0, prog: 0 };
     const ok = ui.planEval?.ok.has(k) ?? false;
-    const [gu, gv] = cam.toView(x + 0.5, y + 0.5);
     list.push({
-      depth: gu + gv,
+      depth: y + 1 + x * 1e-4,
       draw: () => {
         ctx.globalAlpha = ok ? 0.45 : 0.25;
-        blitBuilding(ctx, cam, dpr, x, y, ghost, 0);
+        blitBuilding(ctx, cam, x, y, ghost, 0);
         ctx.globalAlpha = 1;
       },
     });
@@ -590,10 +550,13 @@ export function drawBuilding(
       const zb = 0.98 + bob;
       const zm = 1.3 + bob;
       const zt = 1.65 + bob;
-      tri(ctx, cam, [cx - w, cy + w, zm], [cx + w, cy + w, zm], [cx, cy, zb], shade(C.aether, 0.55));
-      tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zb], shade(C.aether, 0.72));
-      tri(ctx, cam, [cx - w, cy + w, zm], [cx + w, cy + w, zm], [cx, cy, zt], shade(C.aether, 0.88));
-      tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zt], C.aetherHi);
+      const L: P3 = [cx - w, cy, zm];
+      const R: P3 = [cx + w, cy, zm];
+      const F: P3 = [cx, cy + w, zm];
+      tri(ctx, cam, L, F, [cx, cy, zb], shade(C.aether, 0.55));
+      tri(ctx, cam, F, R, [cx, cy, zb], shade(C.aether, 0.72));
+      tri(ctx, cam, L, F, [cx, cy, zt], shade(C.aether, 0.9));
+      tri(ctx, cam, F, R, [cx, cy, zt], C.aetherHi);
       break;
     }
     case Building.Wall: {
@@ -609,7 +572,7 @@ export function drawBuilding(
       // Wooden platform, iron derrick with cross-bracing, brass gear wheel on top.
       prism(ctx, cam, x + 0.06, y + 0.06, x + 0.94, y + 0.94, 0, 0.18, C.wood);
       planks(ctx, cam, x + 0.06, y + 0.06, x + 0.94, y + 0.94, 0.18);
-      const front = t.dir === 0 || t.dir === 1;
+      const front = t.dir === 1;
       if (!front) chute(ctx, cam, cx, cy, t.dir);
       const zTop = 0.95;
       derrick(ctx, cam, x + 0.2, y + 0.2, x + 0.8, y + 0.8, 0.18, [cx, cy, zTop]);
@@ -628,16 +591,7 @@ export function drawBuilding(
       cylinder(ctx, cam, x + 0.27, y + 0.27, 1.12, 1.24, 0.15, C.brass);
       furnaceMouth(ctx, cam, x, y, t, t.cd > 0 ? C.furnaceHot : '#2a1006');
       raisedArrow(ctx, cam, cx + 0.14, cy + 0.14, 0.55, t.dir, 0.15, C.ink);
-      if (fx && t.cd > 0) {
-        for (let i = 0; i < 3; i++) {
-          const ph = (time / 50 + i / 3) % 1;
-          const [sx, sy] = cam.project(x + 0.27 - ph * 0.15, y + 0.27 - ph * 0.15, 1.3 + ph * 0.7);
-          ctx.fillStyle = `rgba(200,190,175,${(0.5 * (1 - ph)).toFixed(3)})`;
-          ctx.beginPath();
-          ctx.arc(sx, sy, cam.scale * (0.05 + 0.08 * ph), 0, Math.PI * 2);
-          ctx.fill();
-        }
-      }
+      if (fx && t.cd > 0) smoke(ctx, cam, x, y, time);
       break;
     }
     case Building.Turret: {
@@ -648,7 +602,7 @@ export function drawBuilding(
       const head = empty ? '#a08a5a' : C.turret;
       const bx = cx + Math.cos(aim) * 0.52;
       const by = cy + Math.sin(aim) * 0.52;
-      const barrelFront = Math.cos(aim) + Math.sin(aim) > 0;
+      const barrelFront = Math.sin(aim) > 0;
       const barrel = () => {
         const [ax, ay] = cam.project(cx, cy, 0.4);
         const [ex, ey] = cam.project(bx, by, 0.42);
@@ -682,7 +636,7 @@ export function drawBuilding(
         ctx.strokeStyle = C.noAmmo;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.ellipse(sx, sy, 0.26 * cam.scale * 0.707, 0.26 * cam.scale * 0.354, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx, sy, 0.26 * cam.scale, 0.26 * cam.scale * DEPTH, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
       break;
@@ -692,20 +646,31 @@ export function drawBuilding(
 
 // ---------------- steampunk detail helpers ----------------
 
-/** Brass rivets along the top edge of the two visible faces of a box, at height z. */
-function rivets(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, y0: number, x1: number, y1: number, z: number, n: number): void {
+/** Furnace smoke: three puffs rising and drifting from the stack. */
+function smoke(ctx: CanvasRenderingContext2D, cam: Proj, x: number, y: number, time: number): void {
+  for (let i = 0; i < 3; i++) {
+    const ph = (time / 50 + i / 3) % 1;
+    const [sx, sy] = cam.project(x + 0.27 - ph * 0.12, y + 0.27, 1.3 + ph * 0.8);
+    ctx.fillStyle = `rgba(200,190,175,${(0.5 * (1 - ph)).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy, cam.scale * (0.05 + 0.08 * ph), 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+/** Brass rivets along the front face of a box, at height z. */
+function rivets(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, _y0: number, x1: number, y1: number, z: number, n: number): void {
   const r = Math.max(1, cam.scale * 0.022);
   ctx.fillStyle = C.brassHi;
   ctx.strokeStyle = C.ink;
   ctx.lineWidth = Math.max(0.6, r * 0.5);
   for (let i = 0; i < n; i++) {
     const f = (i + 0.5) / n;
-    for (const [px, py] of [cam.project(x0 + (x1 - x0) * f, y1, z), cam.project(x1, y0 + (y1 - y0) * f, z)]) {
-      ctx.beginPath();
-      ctx.arc(px, py, r, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.stroke();
-    }
+    const [px, py] = cam.project(x0 + (x1 - x0) * f, y1, z);
+    ctx.beginPath();
+    ctx.arc(px, py, r, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
   }
 }
 
@@ -714,15 +679,14 @@ function seams(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, y0: number,
   ctx.strokeStyle = C.ink;
   ctx.lineWidth = Math.max(0.8, inkW(cam) * 0.6);
   ctx.beginPath();
-  const mx = (x0 + x1) / 2;
-  const my = (y0 + y1) / 2;
-  for (const [a, b] of [
-    [cam.project(mx, y1, 0), cam.project(mx, y1, z * 2)],
-    [cam.project(x1, my, 0), cam.project(x1, my, z * 2)],
-  ]) {
-    ctx.moveTo(a[0], a[1]);
-    ctx.lineTo(b[0], b[1]);
+  for (const f of [1 / 3, 2 / 3]) {
+    const mx = x0 + (x1 - x0) * f;
+    const [ax, ay] = cam.project(mx, y1, 0);
+    const [bx, by] = cam.project(mx, y1, z * 2);
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
   }
+  void y0;
   ctx.stroke();
 }
 
@@ -730,7 +694,7 @@ function seams(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, y0: number,
 function bands(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, y0: number, x1: number, y1: number, zs: number[]): void {
   for (const z of zs) {
     quad(ctx, cam, [[x0, y1, z], [x1, y1, z], [x1, y1, z + 0.05], [x0, y1, z + 0.05]], C.brass);
-    quad(ctx, cam, [[x1, y0, z], [x1, y1, z], [x1, y1, z + 0.05], [x1, y0, z + 0.05]], shade(C.brass, 0.86));
+    void y0;
   }
 }
 
@@ -760,8 +724,6 @@ function derrick(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, y0: numbe
   const pts: [P3, P3][] = [
     [[x0, y1, z0], [x1 - (x1 - x0) * ins, y1 - (y1 - y0) * ins, zm]],
     [[x1, y1, z0], [x0 + (x1 - x0) * ins, y1 - (y1 - y0) * ins, zm]],
-    [[x1, y0, z0], [x1 - (x1 - x0) * ins, y1 - (y1 - y0) * ins, zm]],
-    [[x1, y1, z0], [x1 - (x1 - x0) * ins, y0 + (y1 - y0) * ins, zm]],
   ];
   for (const [a, b] of pts) {
     const [ax, ay] = cam.project(a[0], a[1], a[2]);
@@ -798,9 +760,9 @@ function gear(ctx: CanvasRenderingContext2D, px: number, py: number, r: number, 
 /** Half-dome cap on a cylinder top (screen-space ellipse arc). */
 function dome(ctx: CanvasRenderingContext2D, cam: Proj, cx: number, cy: number, z: number, r: number, color: string): void {
   const [sx, sy] = cam.project(cx, cy, z);
-  const rx = r * cam.scale * 0.707;
-  const ry = r * cam.scale * 0.354;
-  const h = r * cam.scale * 0.55;
+  const rx = r * cam.scale;
+  const ry = r * cam.scale * DEPTH;
+  const h = r * cam.scale * RISE * 0.8;
   ctx.fillStyle = color;
   ctx.strokeStyle = C.ink;
   ctx.lineWidth = inkW(cam);
@@ -839,13 +801,16 @@ function gauge(ctx: CanvasRenderingContext2D, cam: Proj, x: number, y: number, z
 /** Glowing furnace mouth on the face it outputs through (or the top edge if that face is hidden). */
 export function furnaceMouth(ctx: CanvasRenderingContext2D, cam: Proj, x: number, y: number, t: Tile, color: string): void {
   const cx = x + 0.5;
-  const cy = y + 0.5;
   const z0 = 0.1;
   const z1 = 0.34;
-  if (t.dir === 0) quad(ctx, cam, [[x + 0.92, cy - 0.17, z0], [x + 0.92, cy + 0.17, z0], [x + 0.92, cy + 0.17, z1], [x + 0.92, cy - 0.17, z1]], color, false);
-  else if (t.dir === 1) quad(ctx, cam, [[cx - 0.17, y + 0.92, z0], [cx + 0.17, y + 0.92, z0], [cx + 0.17, y + 0.92, z1], [cx - 0.17, y + 0.92, z1]], color, false);
-  else if (t.dir === 2) quad(ctx, cam, [[x + 0.1, cy - 0.17, 0.55], [x + 0.3, cy - 0.17, 0.55], [x + 0.3, cy + 0.17, 0.55], [x + 0.1, cy + 0.17, 0.55]], color, false);
-  else quad(ctx, cam, [[cx - 0.17, y + 0.1, 0.55], [cx + 0.17, y + 0.1, 0.55], [cx + 0.17, y + 0.3, 0.55], [cx - 0.17, y + 0.3, 0.55]], color, false);
+  if (t.dir === 3) {
+    quad(ctx, cam, [[cx - 0.17, y + 0.1, 0.55], [cx + 0.17, y + 0.1, 0.55], [cx + 0.17, y + 0.3, 0.55], [cx - 0.17, y + 0.3, 0.55]], color, false);
+    return;
+  }
+  // East/west outputs sit at that end of the front face; south is centred.
+  const mx = t.dir === 0 ? x + 0.72 : t.dir === 2 ? x + 0.28 : cx;
+  const w = t.dir === 1 ? 0.17 : 0.12;
+  quad(ctx, cam, [[mx - w, y + 0.92, z0], [mx + w, y + 0.92, z0], [mx + w, y + 0.92, z1], [mx - w, y + 0.92, z1]], color, false);
 }
 
 /** Miner's output chute: a short box from the centre towards the output side. */
@@ -886,7 +851,7 @@ export function paintMite(
   // Hop: squash at the bottom, stretch in the air.
   const sq = 1 + (1 - hop) * 0.18;
   const bx = gx;
-  const by = gy - (0.16 + hop * 0.14) * (s / 2);
+  const by = gy - (0.16 + hop * 0.14) * s * RISE;
   const rx = s * 0.17 * sq;
   const ry = (s * 0.15) / sq;
   ctx.fillStyle = C.enemy;
@@ -1009,7 +974,7 @@ function tri(ctx: CanvasRenderingContext2D, cam: Proj, a: P3, b: P3, c: P3, colo
   quad(ctx, cam, [a, b, c], color);
 }
 
-/** Square pyramid; only the faces the viewer sees (+y, +x). */
+/** Square pyramid: left, right and front faces (the back one hides behind them). */
 function pyramid(
   ctx: CanvasRenderingContext2D,
   cam: Proj,
@@ -1021,11 +986,12 @@ function pyramid(
   apex: P3,
   base: string,
 ): void {
+  tri(ctx, cam, [x0, y0, z0], [x0, y1, z0], apex, shade(base, 0.82));
+  tri(ctx, cam, [x1, y0, z0], [x1, y1, z0], apex, shade(base, 0.92));
   tri(ctx, cam, [x0, y1, z0], [x1, y1, z0], apex, shade(base, 0.7));
-  tri(ctx, cam, [x1, y0, z0], [x1, y1, z0], apex, shade(base, 0.85));
 }
 
-/** Axis-aligned box; only the three faces the viewer sees (+y, +x, top). */
+/** Axis-aligned box: front (+y) face and top — the side faces are edge-on. */
 function prism(
   ctx: CanvasRenderingContext2D,
   cam: Proj,
@@ -1037,8 +1003,7 @@ function prism(
   z1: number,
   base: string,
 ): void {
-  quad(ctx, cam, [[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], shade(base, 0.7));
-  quad(ctx, cam, [[x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1]], shade(base, 0.86));
+  quad(ctx, cam, [[x0, y1, z0], [x1, y1, z0], [x1, y1, z1], [x0, y1, z1]], shade(base, 0.74));
   quad(ctx, cam, [[x0, y0, z1], [x1, y0, z1], [x1, y1, z1], [x0, y1, z1]], base);
 }
 
@@ -1052,8 +1017,8 @@ function cylinder(
   r: number,
   base: string,
 ): void {
-  const rx = r * cam.scale * 0.707;
-  const ry = r * cam.scale * 0.354;
+  const rx = r * cam.scale;
+  const ry = r * cam.scale * DEPTH;
   const [bx, by] = cam.project(cx, cy, z0);
   const [tx, ty] = cam.project(cx, cy, z1);
   ctx.strokeStyle = C.ink;
@@ -1284,8 +1249,7 @@ function drawLighting(
     if (t.b !== Building.Furnace || t.cd <= 0 || !inView(k, v)) continue;
     const x = kx(k);
     const y = ky(k);
-    const [u, w] = cam.viewTile(x, y);
-    furnaceMouth(ctx, localProj(cam, x, y, u, w), u, w, { ...t, dir: cam.viewDir(t.dir) }, C.furnaceHot);
+    furnaceMouth(ctx, cam, x, y, t, C.furnaceHot);
   }
   ctx.fillStyle = '#ffe066';
   const eye = Math.max(1.5, cam.scale * 0.03);
@@ -1330,8 +1294,8 @@ function isoGlow(
   color: string,
 ): void {
   const [sx, sy] = cam.project(x, y, 0);
-  const rx = r * cam.scale * 0.707;
-  c.drawImage(glowSprite(color) as CanvasImageSource, sx - rx, sy - rx / 2, rx * 2, rx);
+  const rx = r * cam.scale;
+  c.drawImage(glowSprite(color) as CanvasImageSource, sx - rx, sy - rx * DEPTH, rx * 2, rx * 2 * DEPTH);
 }
 
 
@@ -1349,17 +1313,16 @@ export function drawToolIcon(canvas: HTMLCanvasElement, tool: Exclude<Tool, 'sel
   const ctx = canvas.getContext('2d')!;
   const b = TOOL_BUILDING[tool];
   const h = HEIGHT[b] ?? 0;
-  const cam = new Camera();
-  cam.resize(size, sizeH);
-  // Fit diamond + height: vertical extent is s·(1+h)/2.
-  cam.scale = Math.min(size * 0.92, (sizeH * 1.84) / (1 + h));
-  cam.centerOn(0.5 - h / 2, 0.5 - h / 2);
+  // Fit one tile plus the building's height: s wide, s·(DEPTH + h·RISE) tall.
+  const s = Math.min(size * 0.86, (sizeH * 0.94) / (DEPTH + h * RISE));
+  const ax = (size - s) / 2;
+  const ay = (sizeH - s * (DEPTH + h * RISE)) / 2 + h * s * RISE;
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, size, sizeH);
 
   // Ground tile
-  cam.applyGround(ctx, dpr);
+  ctx.setTransform(dpr * s, 0, 0, dpr * s * DEPTH, dpr * ax, dpr * ay);
   ctx.fillStyle = tool === 'miner' ? T.oreGround : T.landAlt;
   ctx.fillRect(0, 0, 1, 1);
   if (tool === 'miner') {
@@ -1371,12 +1334,12 @@ export function drawToolIcon(canvas: HTMLCanvasElement, tool: Exclude<Tool, 'sel
     }
   }
   if (isBelt(b)) {
-    const ink = 2.2 / cam.scale;
+    const ink = 2.2 / s;
     paintBelt(ctx, 0, 0, b, 0, 0.3, ink);
     paintItem(ctx, 0.7, 0.5, Item.Iron, ink);
     return;
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  const tile: Tile = { b, hp: 1, dir: 0, cd: 40, ammo: 1, inp: 0, out: 0, item: 0, prog: 0 };
-  drawBuilding(ctx, cam, 0, 0, tile);
+  const tile: Tile = { b, hp: 1, dir: 1, cd: 40, ammo: 1, inp: 0, out: 0, item: 0, prog: 0 };
+  drawBuilding(ctx, projAt(s, ax, ay), 0, 0, tile);
 }

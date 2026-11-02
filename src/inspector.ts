@@ -24,11 +24,11 @@ export const supportsHtmlInCanvas =
   typeof CanvasRenderingContext2D !== 'undefined' && 'drawElementImage' in CanvasRenderingContext2D.prototype;
 
 const RAISE: Partial<Record<Building, number>> = {
-  [Building.Core]: 1.6,
-  [Building.Wall]: 0.62,
-  [Building.Miner]: 1.05,
-  [Building.Furnace]: 1.15,
-  [Building.Turret]: 0.6,
+  [Building.Core]: 1.7,
+  [Building.Wall]: 0.64,
+  [Building.Miner]: 1.1,
+  [Building.Furnace]: 1.3,
+  [Building.Turret]: 0.62,
   [Building.Belt]: 0.05,
   [Building.FastBelt]: 0.05,
 }
@@ -47,9 +47,8 @@ export class Inspector {
   private sig = '';
   private at: [number, number] | null = null;
 
-  constructor(canvas: HTMLCanvasElement, stage: HTMLElement, onAction: (a: InspectorAction) => void, allowInCanvas = true) {
-    // drawElementImage is a 2D-context API: with the WebGL renderer, use the anchored overlay.
-    this.mode = supportsHtmlInCanvas && allowInCanvas ? 'canvas' : 'overlay';
+  constructor(canvas: HTMLCanvasElement, stage: HTMLElement, onAction: (a: InspectorAction) => void) {
+    this.mode = supportsHtmlInCanvas ? 'canvas' : 'overlay';
     this.stage = stage;
     this.canvas = canvas;
 

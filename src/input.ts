@@ -7,11 +7,10 @@
 //  Cinta/Rápida/Muro/Quitar: drag draws a clean L-shaped line from where the finger went
 //                    down (not the jittery finger path); belts get directions and corners.
 //  Torreta/Minero/Horno: drag pans (they're placed one at a time).
-//  Two fingers:      pinch zoom + pan + twist to turn the view, always.
+//  Two fingers:      pinch zoom + pan, always.
 //
 // Touch plans stay until ✓/✗. Mouse commits automatically on release, so desktop
-// still feels immediate. Mouse: right click = remove, right-drag = turn view,
-// middle-drag = pan, wheel = zoom.
+// still feels immediate. Mouse: right = remove, middle-drag = pan, wheel = zoom.
 
 import { Camera } from './camera';
 import { dirTo, lPath, type Plan, type Plans } from './plans';
@@ -27,8 +26,7 @@ type Mode =
   | { kind: 'pending'; tile: Tile; sx: number; sy: number; mouse: boolean; remove: boolean }
   | { kind: 'line'; start: Tile; last: Tile; saved: Map<number, Plan | undefined>; mouse: boolean; remove: boolean }
   | { kind: 'pan'; x: number; y: number }
-  | { kind: 'gesture'; d0: number; scale0: number; anchor: [number, number]; ang0: number }
-  | { kind: 'turn'; x: number }
+  | { kind: 'gesture'; d0: number; scale0: number; anchor: [number, number] }
   | { kind: 'done' }; // ignore until all pointers lift
 
 export interface InputDeps {
@@ -43,7 +41,6 @@ export interface InputDeps {
   phase: () => Phase;
   /** Mouse strokes/clicks build immediately. */
   commit: () => void;
-  onRotate?: () => void;
 }
 
 const TOUCH_SLOP = 10;
@@ -55,7 +52,6 @@ export function attachInput(d: InputDeps): void {
   const { canvas, cam, ui, plans, buildingAt } = d;
   const pts = new Map<number, { x: number; y: number }>();
   let mode: Mode = { kind: 'idle' };
-  let rightDown = false;
 
   /** After losing, every tool behaves like Mover. */
   const tool = (): Tool => (d.phase() === 'lost' ? 'select' : ui.tool);
@@ -173,7 +169,6 @@ export function attachInput(d: InputDeps): void {
     if (pts.size === 1) {
       if (mouse) hover(tile);
       mode = { kind: 'pending', tile, sx, sy, mouse, remove: mouse && e.button === 2 };
-      if (mouse && e.button === 2) rightDown = true;
     } else if (pts.size === 2) {
       if (mode.kind === 'line') drawLine(mode, mode.start); // collapse the stroke to its first tile
       const [a, b] = [...pts.values()];
@@ -182,7 +177,6 @@ export function attachInput(d: InputDeps): void {
         d0: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)),
         scale0: cam.scale,
         anchor: cam.toWorld((a.x + b.x) / 2, (a.y + b.y) / 2),
-        ang0: Math.atan2(b.y - a.y, b.x - a.x),
       };
     }
   });
@@ -203,12 +197,6 @@ export function attachInput(d: InputDeps): void {
       case 'pending': {
         const slop = mode.mouse ? MOUSE_SLOP : TOUCH_SLOP;
         if (Math.hypot(sx - mode.sx, sy - mode.sy) < slop) return;
-        if (mode.mouse && rightDown) {
-          // Right-drag turns the camera; a right click without dragging removes.
-          cam.turning = true;
-          mode = { kind: 'turn', x: sx };
-          return;
-        }
         const t = mode.remove ? 'remove' : tool();
         if (LINE_TOOLS.includes(t)) {
           const line: Extract<Mode, { kind: 'line' }> = {
@@ -231,10 +219,6 @@ export function attachInput(d: InputDeps): void {
         if (e.pointerType === 'mouse') hover(tile);
         if (tile[0] !== mode.last[0] || tile[1] !== mode.last[1]) drawLine(mode, tile);
         return;
-      case 'turn':
-        cam.turnBy(-(sx - mode.x) / 220);
-        mode.x = sx;
-        return;
       case 'pan':
         cam.panBy(sx - mode.x, sy - mode.y);
         mode.x = sx;
@@ -246,15 +230,6 @@ export function attachInput(d: InputDeps): void {
         const dist = Math.hypot(a.x - b.x, a.y - b.y);
         const mx = (a.x + b.x) / 2;
         const my = (a.y + b.y) / 2;
-        // Twisting the two fingers turns the view with them (eased to a
-        // quarter turn on release). The ground point between the fingers stays put.
-        const ang = Math.atan2(b.y - a.y, b.x - a.x);
-        let dAng = ang - mode.ang0;
-        if (dAng > Math.PI) dAng -= Math.PI * 2;
-        if (dAng < -Math.PI) dAng += Math.PI * 2;
-        mode.ang0 = ang;
-        cam.turning = true;
-        cam.turnBy(-dAng / (Math.PI / 2));
         cam.zoomTo((mode.scale0 * dist) / mode.d0, mode.anchor, mx, my);
         return;
       }
@@ -273,8 +248,6 @@ export function attachInput(d: InputDeps): void {
         d.commit();
       }
     }
-    if (pts.size < 2) cam.turning = false; // let it ease to a quarter turn
-    rightDown = false;
     if (pts.size === 0) mode = { kind: 'idle' };
     else if (mode.kind !== 'idle') mode = { kind: 'done' };
   };
