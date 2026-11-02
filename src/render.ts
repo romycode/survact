@@ -95,7 +95,7 @@ export const C = {
 };
 
 /** Outline width in CSS px for a given zoom. */
-const inkW = (cam: Proj) => Math.max(1.1, cam.scale * 0.026);
+export const inkW = (cam: Proj) => Math.max(1.1, cam.scale * 0.026);
 
 interface View {
   x0: number;
@@ -280,7 +280,7 @@ function drawPaths(ctx: CanvasRenderingContext2D, world: World): void {
   ctx.fill();
 }
 
-function groundArrow(ctx: CanvasRenderingContext2D, cx: number, cy: number, d: number, size: number, color: string): void {
+export function groundArrow(ctx: CanvasRenderingContext2D, cx: number, cy: number, d: number, size: number, color: string): void {
   const pts = arrowPoints(cx, cy, d, size);
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -400,8 +400,8 @@ type Drawable = { depth: number; draw: () => void };
 // blitted, instead of re-tracing 5–15 outlined polygons each per frame.
 // Only the core (animated gem) and furnace smoke are drawn live.
 
-const AIM_STEPS = 16;
-const SPRITE_TOP = 1.7; // tallest silhouette, in tile heights
+export const AIM_STEPS = 16;
+export const SPRITE_TOP = 1.7; // tallest silhouette, in tile heights
 const SPRITE_SETTLE = 6;
 
 interface Sprite {
@@ -459,7 +459,7 @@ const sprites = {
  * Projector for drawing a building in K-view coords as a rigid piece placed
  * where the (possibly mid-turn) camera puts the tile's centre.
  */
-function localProj(cam: Camera, x: number, y: number, u: number, v: number): Proj {
+export function localProj(cam: Camera, x: number, y: number, u: number, v: number): Proj {
   const [kx0, ky0] = cam.projectKFlat(u + 0.5, v + 0.5, 0);
   const [sx0, sy0] = cam.project(x + 0.5, y + 0.5, 0);
   const dx = sx0 - kx0;
@@ -559,9 +559,9 @@ export const HEIGHT: Partial<Record<Building, number>> = {
 }
 
 /** Last aim angle per turret (render-side only, from the shots it fired). */
-const turretAim = new Map<number, number>();
+export const turretAim = new Map<number, number>();
 
-function drawBuilding(
+export function drawBuilding(
   ctx: CanvasRenderingContext2D,
   cam: Proj,
   x: number,
@@ -837,7 +837,7 @@ function gauge(ctx: CanvasRenderingContext2D, cam: Proj, x: number, y: number, z
 }
 
 /** Glowing furnace mouth on the face it outputs through (or the top edge if that face is hidden). */
-function furnaceMouth(ctx: CanvasRenderingContext2D, cam: Proj, x: number, y: number, t: Tile, color: string): void {
+export function furnaceMouth(ctx: CanvasRenderingContext2D, cam: Proj, x: number, y: number, t: Tile, color: string): void {
   const cx = x + 0.5;
   const cy = y + 0.5;
   const z0 = 0.1;
@@ -860,24 +860,39 @@ function chute(ctx: CanvasRenderingContext2D, cam: Proj, cx: number, cy: number,
   prism(ctx, cam, Math.min(ax, bx) - (fx ? 0 : w), Math.min(ay, by) - (fy ? 0 : w), Math.max(ax, bx) + (fx ? 0 : w), Math.max(ay, by) + (fy ? 0 : w), 0.12, 0.3, C.copper);
 }
 
-function drawEnemy(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, e: Enemy): void {
-  const s = cam.scale;
-  // Hop: squash at the bottom, stretch in the air.
+/** Animation state of an enemy at a position (pure: same input, same pose). */
+export function enemyPose(cam: Camera, x: number, y: number, e: Enemy): { hop: number; spin: number; look: number } {
   const hop = Math.abs(Math.sin((x + y) * 4 + e.id));
-  const sq = 1 + (1 - hop) * 0.18;
+  const spin = Math.cos((x + y) * 3 + e.id);
   const [gx, gy] = cam.project(x, y, 0);
-  ctx.fillStyle = C.shadow;
-  ctx.beginPath();
-  ctx.ellipse(gx, gy, s * 0.17, s * 0.085, 0, 0, Math.PI * 2);
-  ctx.fill();
-  const [bx, by] = cam.project(x, y, 0.16 + hop * 0.14);
+  const [hx, hy] = cam.project(x + (e.x - e.prevX) * 30, y + (e.y - e.prevY) * 30, 0);
+  return { hop, spin, look: Math.atan2(hy - gy, hx - gx) };
+}
+
+/**
+ * Wind-up mite body (no shadow), with its ground point at (gx, gy) in screen
+ * px and `s` px per tile. Shared by the 2D renderer and the WebGL atlas.
+ */
+export function paintMite(
+  ctx: CanvasRenderingContext2D,
+  gx: number,
+  gy: number,
+  s: number,
+  hop: number,
+  spin: number,
+  look: number,
+  ink: number,
+): void {
+  // Hop: squash at the bottom, stretch in the air.
+  const sq = 1 + (1 - hop) * 0.18;
+  const bx = gx;
+  const by = gy - (0.16 + hop * 0.14) * (s / 2);
   const rx = s * 0.17 * sq;
   const ry = (s * 0.15) / sq;
   ctx.fillStyle = C.enemy;
   ctx.strokeStyle = C.ink;
-  ctx.lineWidth = inkW(cam);
+  ctx.lineWidth = ink;
   ctx.beginPath();
-  // dome-shaped slime: round top, flatter bottom
   ctx.ellipse(bx, by, rx, ry, 0, Math.PI, 0);
   ctx.quadraticCurveTo(bx + rx, by + ry * 0.8, bx, by + ry * 0.8);
   ctx.quadraticCurveTo(bx - rx, by + ry * 0.8, bx - rx, by);
@@ -889,11 +904,9 @@ function drawEnemy(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: num
   ctx.ellipse(bx - rx * 0.4, by - ry * 0.45, rx * 0.22, ry * 0.18, -0.5, 0, Math.PI * 2);
   ctx.fill();
   // Clockwork: a brass wind-up key on its back that spins as it hops.
-  const ink = inkW(cam);
   const kx0 = bx + rx * 0.15;
   const ky0 = by - ry * 0.85;
   const kh = s * 0.11;
-  const spin = Math.cos((x + y) * 3 + e.id);
   ctx.strokeStyle = C.ink;
   ctx.lineWidth = Math.max(2, s * 0.03) + ink * 2;
   ctx.lineCap = 'round';
@@ -916,8 +929,6 @@ function drawEnemy(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: num
     ctx.stroke();
   }
   // Eyes looking where it's heading (screen space)
-  const [hx, hy] = cam.project(x + (e.x - e.prevX) * 30, y + (e.y - e.prevY) * 30, 0);
-  const look = Math.atan2(hy - gy, hx - gx);
   const er = Math.max(1.6, s * 0.045);
   for (const side of [-1, 1]) {
     const ex = bx + side * rx * 0.38;
@@ -931,6 +942,17 @@ function drawEnemy(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: num
     ctx.arc(ex + Math.cos(look) * er * 0.4, ey + Math.sin(look) * er * 0.4, er * 0.55, 0, Math.PI * 2);
     ctx.fill();
   }
+}
+
+function drawEnemy(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, e: Enemy): void {
+  const s = cam.scale;
+  const [gx, gy] = cam.project(x, y, 0);
+  ctx.fillStyle = C.shadow;
+  ctx.beginPath();
+  ctx.ellipse(gx, gy, s * 0.17, s * 0.085, 0, 0, Math.PI * 2);
+  ctx.fill();
+  const p = enemyPose(cam, x, y, e);
+  paintMite(ctx, gx, gy, s, p.hop, p.spin, p.look, inkW(cam));
 }
 
 function drawShotsAndBars(ctx: CanvasRenderingContext2D, world: World, cam: Camera, alpha: number, v: View): void {
@@ -1081,7 +1103,7 @@ function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 }
 
 const shadeCache = new Map<string, string>();
-function shade(hex: string, f: number): string {
+export function shade(hex: string, f: number): string {
   const k = hex + f;
   let out = shadeCache.get(k);
   if (!out) {
@@ -1108,7 +1130,7 @@ let reachCache: { world: World | null; version: number; set: Set<number> } = {
   version: -1,
   set: new Set(),
 };
-function reachSet(world: World): Set<number> {
+export function reachSet(world: World): Set<number> {
   if (reachCache.world === world && reachCache.version === world.grid.version) return reachCache.set;
   const set = new Set<number>();
   const r = MAP.buildReach;
@@ -1127,7 +1149,7 @@ function inView(k: number, v: View): boolean {
   return x >= v.x0 && x <= v.x1 && y >= v.y0 && y <= v.y1;
 }
 
-function lerp(a: number, b: number, t: number): number {
+export function lerp(a: number, b: number, t: number): number {
   return a + (b - a) * t;
 }
 

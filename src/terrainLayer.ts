@@ -282,7 +282,7 @@ export function paintTerrain(
 type Surface = HTMLCanvasElement | OffscreenCanvas;
 type Ctx2D = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D;
 
-interface Chunk {
+export interface Chunk {
   canvas: Surface;
   /** GPU-friendly snapshot of `canvas` (uploaded once, not every frame). */
   image: CanvasImageSource;
@@ -305,7 +305,25 @@ function surface(w: number, h: number): Surface {
   return c;
 }
 
+/** Where chunks get drawn: a 2D context, or the WebGL renderer. */
+export interface ChunkSink {
+  /** Transform for the whole layer, device px (identity unless mid-turn). */
+  begin(m: [number, number, number, number, number, number]): void;
+  blit(c: Chunk, dx: number, dy: number, dw: number, dh: number, pixelExact: boolean): void;
+  end(): void;
+}
+
 export class TerrainCache {
+  /** Keep chunks as canvases (WebGL uploads them itself) instead of ImageBitmaps. */
+  private readonly keepCanvas: boolean;
+  /** Called when a chunk is replaced or evicted (WebGL frees its texture). */
+  private readonly dispose?: (c: Chunk) => void;
+
+  constructor(opts: { keepCanvas?: boolean; dispose?: (c: Chunk) => void } = {}) {
+    this.keepCanvas = opts.keepCanvas ?? false;
+    this.dispose = opts.dispose;
+  }
+
   private world: World | null = null;
   private readonly chunks = new Map<number, Chunk>();
   private frame = 0;
@@ -320,15 +338,35 @@ export class TerrainCache {
    * the caller then paints the (few) visible tiles directly.
    */
   draw(ctx: CanvasRenderingContext2D, world: World, cam: Camera, dpr: number, cssW: number, cssH: number): boolean {
+    return this.drawTo(
+      {
+        begin: (m) => ctx.setTransform(m[0], m[1], m[2], m[3], m[4], m[5]),
+        blit: (c, dx, dy, dw, dh, exact) =>
+          exact ? ctx.drawImage(c.image, Math.round(dx), Math.round(dy)) : ctx.drawImage(c.image, dx, dy, dw, dh),
+        end: () => ctx.setTransform(1, 0, 0, 1, 0, 0),
+      },
+      world,
+      cam,
+      dpr,
+      cssW,
+      cssH,
+    );
+  }
+
+  /** Visit visible chunks (painting missing/stale ones) and hand them to a sink. */
+  drawTo(sink: ChunkSink, world: World, cam: Camera, dpr: number, cssW: number, cssH: number, maxScale = MAX_DEVICE_SCALE): boolean {
     if (world !== this.world || cam.rot !== this.rot) {
-      for (const c of this.chunks.values()) if ('close' in c.image) (c.image as ImageBitmap).close();
+      for (const c of this.chunks.values()) this.free(c);
       this.chunks.clear();
       this.world = world;
       this.rot = cam.rot;
     }
     this.frame++;
-    const dev = cam.scale * dpr;
-    if (dev > MAX_DEVICE_SCALE) return false;
+    const fullDev = cam.scale * dpr;
+    // Past maxScale: 2D paints directly (returns false); WebGL passes Infinity
+    // and instead caps the paint scale and stretches the chunk.
+    if (fullDev > maxScale) return false;
+    const dev = Math.min(fullDev, MAX_DEVICE_SCALE);
     this.stillFrames = dev === this.lastScale ? this.stillFrames + 1 : 0;
     this.lastScale = dev;
     const settled = this.stillFrames >= SETTLE_FRAMES;
@@ -350,7 +388,7 @@ export class TerrainCache {
     let drawn = 0;
     let painted = 0;
 
-    ctx.setTransform(ma, mb, mc, md, me * dpr, mf * dpr);
+    sink.begin([ma, mb, mc, md, me * dpr, mf * dpr]);
     // Back to front so a chunk's bank overflow lands under its southern neighbour.
     for (let s = cx0 + cy0; s <= cx1 + cy1; s++) {
       for (let cx = cx0; cx <= cx1; cx++) {
@@ -358,40 +396,43 @@ export class TerrainCache {
         if (cy < cy0 || cy > cy1) continue;
         // Screen bbox of the chunk diamond (device px), culled against the screen.
         const [tx, ty] = cam.projectKFlat(cx * CHUNK, cy * CHUNK, 0);
-        const half = CHUNK * dev * 0.5;
+        const half = CHUNK * fullDev * 0.5;
         const left = tx * dpr - half;
         const top = ty * dpr;
-        if (!turning && (left > W || left + 2 * half < 0 || top > H || top + half + dev < 0)) continue;
+        if (!turning && (left > W || left + 2 * half < 0 || top > H || top + half + fullDev < 0)) continue;
 
         const id = cx * 65536 + cy;
         let c = this.chunks.get(id);
-        if (c && checkSig && c.ore.length && this.oreSig(world, c) !== c.oreSig) c = undefined;
+        const oreDirty = !!c && checkSig && c.ore.length > 0 && this.oreSig(world, c) !== c.oreSig;
         const stale = c !== undefined && c.scale !== dev;
-        // Missing: paint now. Stale (other zoom): keep using it scaled until
-        // the zoom settles, then re-paint within the per-frame budget.
-        if (!c || (stale && settled && budget > 0)) {
-          if (c) budget--;
+        // Missing or ore changed: paint now. Stale (other zoom): keep using it
+        // scaled until the zoom settles, then re-paint within the per-frame budget.
+        if (!c || oreDirty || (stale && settled && budget > 0)) {
+          if (c && !oreDirty) budget--;
+          const old = c;
           c = this.paint(world, cam, cx, cy, dev, dpr, c);
+          if (old) this.dispose?.(old);
           this.chunks.set(id, c);
           painted++;
         }
         c.used = this.frame;
-        const k = dev / c.scale;
+        const k = fullDev / c.scale;
         const dx = tx * dpr - (c.pad + (CHUNK * c.scale) / 2) * k;
         const dy = ty * dpr - c.pad * k;
-        if (k === 1 && !turning) {
-          // 1:1 on whole pixels: no resampling.
-          ctx.drawImage(c.image, Math.round(dx), Math.round(dy));
-        } else {
-          ctx.drawImage(c.image, dx, dy, c.w * k, c.h * k);
-        }
+        // 1:1 on whole pixels when possible: no resampling.
+        sink.blit(c, dx, dy, c.w * k, c.h * k, k === 1 && !turning);
         drawn++;
       }
     }
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    sink.end();
     this.evict(W * H * 3);
     this.stats = { drawn, painted, cached: this.chunks.size };
     return true;
+  }
+
+  private free(c: Chunk): void {
+    if ('close' in c.image) (c.image as ImageBitmap).close();
+    this.dispose?.(c);
   }
 
   private oreSig(world: World, c: Chunk): number {
@@ -405,7 +446,7 @@ export class TerrainCache {
     const pad = Math.ceil(S * 0.5);
     const w = Math.ceil(CHUNK * S + 2 * pad);
     const h = Math.ceil((CHUNK * S) / 2 + 2 * pad);
-    const canvas = prev && prev.canvas.width === w && prev.canvas.height === h ? prev.canvas : surface(w, h);
+    const canvas = !this.keepCanvas && prev && prev.canvas.width === w && prev.canvas.height === h ? prev.canvas : surface(w, h);
     const g = canvas.getContext('2d') as Ctx2D;
     const x0 = cx * CHUNK;
     const y0 = cy * CHUNK;
@@ -427,8 +468,13 @@ export class TerrainCache {
     // Snapshot to an ImageBitmap where possible: drawing a live canvas can
     // re-upload it to the GPU every frame; a bitmap is uploaded once.
     if (prev && 'close' in prev.image) (prev.image as ImageBitmap).close();
-    const image: CanvasImageSource =
-      typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas ? canvas.transferToImageBitmap() : canvas;
+    // With keepCanvas the canvas itself is the image, so a fresh one per paint
+    // (the old chunk's texture may still be alive until dispose()).
+    const image: CanvasImageSource = this.keepCanvas
+      ? canvas
+      : typeof OffscreenCanvas !== 'undefined' && canvas instanceof OffscreenCanvas
+        ? canvas.transferToImageBitmap()
+        : canvas;
     const c: Chunk = { canvas, image, w, h, scale, pad, ore, oreSig: 0, used: this.frame };
     c.oreSig = this.oreSig(world, c);
     return c;
@@ -443,7 +489,7 @@ export class TerrainCache {
     for (const [id, c] of byAge) {
       if (total <= maxPixels || c.used === this.frame) break;
       total -= c.w * c.h;
-      if ('close' in c.image) (c.image as ImageBitmap).close();
+      this.free(c);
       this.chunks.delete(id);
     }
   }

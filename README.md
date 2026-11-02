@@ -1,6 +1,6 @@
 # survact
 
-Factory + tower defense en tiempo continuo, en un mundo infinito. HTML canvas + TypeScript, sin motor. Vista isométrica.
+Factory + tower defense en tiempo continuo, en un mundo infinito. TypeScript sin motor, render **WebGL2** (con Canvas 2D de respaldo). Vista isométrica.
 
 - **Sin dinero.** Todo se paga con recursos que tienen que llegar al núcleo por cinta.
 - **Hierro** → minero → cinta → **horno** → **placas**. Torretas cuestan placas; el resto, hierro.
@@ -52,7 +52,8 @@ src/
   input.ts           punteros: tap / línea en L / pan / pinch, sobre planos
   plans.ts           planos fantasma: validez, coste acumulado, commit a comandos
   inspector.ts       ficha del edificio: HTML-in-Canvas o overlay con anchor positioning
-  render.ts          overlays de suelo, edificios (sprites cacheados) por profundidad, sombras y luces
+  render.ts          el dibujo (fuente única del arte) + renderer Canvas 2D de respaldo
+  gl/renderer.ts     renderer WebGL2: atlas de sprites, quads instanciados, sombras con stencil, luz en FBO
   terrainLayer.ts    terreno estático pintado por chunks 8×8 en bitmaps (caché LRU)
   sim/               simulación pura: sin DOM ni reloj
     world.ts         estado, cuenta atrás de oleadas, apply(cmd), tick(), economía, spawns
@@ -70,7 +71,20 @@ Reglas que hay que mantener:
 - El render no muta estado.
 - `globalThis.__survact` expone `world`, `cam` y `ui` para depurar desde la consola; `__survact.benchRender(n)` da ms/frame y el desglose por fase.
 
-## Rendimiento
+## Render
+
+**WebGL2** por defecto; `?render=2d` fuerza el Canvas 2D (y es el que se usa si no hay WebGL2). El arte se dibuja una sola vez, con el código Canvas 2D de `render.ts`, y WebGL lo usa como texturas:
+
+- **Atlas de sprites** (4096²): edificios por orientación/estado (torreta en 16 ángulos, gema del núcleo en 8 fases), bichos por pose (salto × giro de la llave × mirada), cintas por fase de animación, items, anillos, puntos. Se pintan al zoom actual la primera vez que hacen falta y se rehacen cuando el zoom se asienta.
+- **Quads instanciados**: cada quad es un afín (origen + dos ejes), así el mismo camino sirve para sprites de pie y para tiles del suelo con la cámara en cualquier ángulo. Un frame son unas pocas llamadas de dibujo.
+- **Terreno**: los mismos chunks de `TerrainCache`, subidos una vez cada uno como textura.
+- **Sombras**: un lote de triángulos con stencil, para que los solapes no oscurezcan dos veces.
+- **Noche**: las luces se suman en un buffer a media resolución y una pasada a pantalla completa oscurece lo no iluminado.
+- La ficha del edificio usa el overlay con anchor positioning (`drawElementImage` es API de 2D).
+
+Medido con 676 edificios, 300 enemigos, CPU ×4 más lenta, pantalla 390×844 a 3×: CPU por frame 13–18 ms con WebGL2 frente a 29–34 ms con Canvas 2D. Esperando también a la GPU (emulada por CPU en el test), 0,24–0,37 s frente a ~1,9 s.
+
+## Rendimiento (Canvas 2D)
 
 El render no repinta lo que no cambia:
 
