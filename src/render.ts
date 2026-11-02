@@ -751,7 +751,8 @@ function dome(ctx: CanvasRenderingContext2D, cam: Proj, cx: number, cy: number, 
   const rx = r * cam.scale;
   const ry = r * cam.scale * DEPTH;
   const h = r * cam.scale * RISE * 0.8;
-  ctx.fillStyle = color;
+  const nm = isN(ctx);
+  ctx.fillStyle = nm ? sweep(ctx, sx - rx, sx + rx, 0.6) : color;
   ctx.strokeStyle = C.ink;
   ctx.lineWidth = inkW(cam);
   ctx.beginPath();
@@ -760,6 +761,7 @@ function dome(ctx: CanvasRenderingContext2D, cam: Proj, cx: number, cy: number, 
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
+  if (nm) return;
   ctx.fillStyle = 'rgba(255,255,255,0.4)';
   ctx.beginPath();
   ctx.ellipse(sx - rx * 0.35, sy - h * 0.45, rx * 0.22, h * 0.18, -0.4, 0, Math.PI * 2);
@@ -854,7 +856,7 @@ export function paintMite(
   const by = gy - (0.16 + hop * 0.14) * s * RISE;
   const rx = s * 0.17 * sq;
   const ry = (s * 0.15) / sq;
-  ctx.fillStyle = C.enemy;
+  ctx.fillStyle = isN(ctx) ? sweep(ctx, bx - rx, bx + rx, 0.5) : C.enemy;
   ctx.strokeStyle = C.ink;
   ctx.lineWidth = ink;
   ctx.beginPath();
@@ -948,12 +950,86 @@ function drawShotsAndBars(ctx: CanvasRenderingContext2D, world: World, cam: Came
   }
 }
 
+// ---------------- normal-map painting ----------------
+// The same drawing code can paint a normal map instead of colours: wrap the
+// context with normalCtx(). Faces fill with their encoded world normal
+// (rgb = n·0.5 + 0.5; x east, y south/toward the viewer, z up), curved
+// surfaces with gradients; any other opaque colour becomes a generic
+// "front-and-up" normal, translucent ones (highlights) are skipped.
+
+const NCTX = new WeakSet<object>();
+const NSET = new Set<string>();
+const VIEW = (() => {
+  const l = Math.hypot(RISE, DEPTH);
+  return [0, RISE / l, DEPTH / l];
+})();
+
+export function encodeN(x: number, y: number, z: number): string {
+  const l = Math.hypot(x, y, z) || 1;
+  const c = (v: number) => Math.round((v / l) * 127.5 + 127.5);
+  const out = `rgb(${c(x)},${c(y)},${c(z)})`;
+  NSET.add(out);
+  return out;
+}
+const N_FRONT_UP = encodeN(0, 0.55, 0.83);
+const N_UP = encodeN(0, 0, 1);
+const isN = (ctx: object) => NCTX.has(ctx);
+
+function mapForNormals(v: string): string {
+  if (NSET.has(v)) return v;
+  const m = v.match(/rgba\([^)]*,\s*([\d.]+)\s*\)/);
+  if (m && parseFloat(m[1]) < 0.999) return 'rgba(0,0,0,0)';
+  return N_FRONT_UP;
+}
+
+/** Wrap a 2D context so the art code paints normals into it. */
+export function normalCtx(g: CanvasRenderingContext2D): CanvasRenderingContext2D {
+  const p = new Proxy(g, {
+    get(t, k) {
+      const v = (t as unknown as Record<string | symbol, unknown>)[k];
+      return typeof v === 'function' ? (v as (...a: unknown[]) => unknown).bind(t) : v;
+    },
+    set(t, k, v) {
+      if ((k === 'fillStyle' || k === 'strokeStyle') && typeof v === 'string') v = mapForNormals(v);
+      (t as unknown as Record<string | symbol, unknown>)[k] = v;
+      return true;
+    },
+  });
+  NCTX.add(p);
+  return p;
+}
+
+/** Left→right normal sweep across a curved surface (cylinder side, dome, body). */
+function sweep(ctx: CanvasRenderingContext2D, x0: number, x1: number, up: number): CanvasGradient {
+  const g = ctx.createLinearGradient(x0, 0, x1, 0);
+  const side = Math.sqrt(1 - up * up);
+  g.addColorStop(0, encodeN(-side, 0, up));
+  g.addColorStop(0.5, encodeN(0, side, up));
+  g.addColorStop(1, encodeN(side, 0, up));
+  return g;
+}
+
+function faceNormal(pts: P3[]): string {
+  const [a, b, c] = pts;
+  const ux = b[0] - a[0], uy = b[1] - a[1], uz = b[2] - a[2];
+  const vx = c[0] - a[0], vy = c[1] - a[1], vz = c[2] - a[2];
+  let nx = uy * vz - uz * vy;
+  let ny = uz * vx - ux * vz;
+  let nz = ux * vy - uy * vx;
+  if (nx * VIEW[0] + ny * VIEW[1] + nz * VIEW[2] < 0) {
+    nx = -nx;
+    ny = -ny;
+    nz = -nz;
+  }
+  return encodeN(nx, ny, nz);
+}
+
 // ---------------- 3D primitives ----------------
 
 type P3 = [number, number, number];
 
 function quad(ctx: CanvasRenderingContext2D, cam: Proj, pts: P3[], color: string, outline = true): void {
-  ctx.fillStyle = color;
+  ctx.fillStyle = isN(ctx) ? faceNormal(pts) : color;
   ctx.beginPath();
   pts.forEach(([x, y, z], i) => {
     const [sx, sy] = cam.project(x, y, z);
@@ -1023,7 +1099,8 @@ function cylinder(
   const [tx, ty] = cam.project(cx, cy, z1);
   ctx.strokeStyle = C.ink;
   ctx.lineWidth = inkW(cam);
-  ctx.fillStyle = shade(base, 0.72);
+  const nm = isN(ctx);
+  ctx.fillStyle = nm ? sweep(ctx, bx - rx, bx + rx, 0) : shade(base, 0.72);
   ctx.beginPath();
   ctx.ellipse(bx, by, rx, ry, 0, 0, Math.PI);
   ctx.lineTo(tx - rx, ty);
@@ -1031,11 +1108,12 @@ function cylinder(
   ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  ctx.fillStyle = base;
+  ctx.fillStyle = nm ? N_UP : base;
   ctx.beginPath();
   ctx.ellipse(tx, ty, rx, ry, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.stroke();
+  if (nm) return;
   // cartoon highlight
   ctx.fillStyle = 'rgba(255,255,255,0.35)';
   ctx.beginPath();
@@ -1068,7 +1146,14 @@ function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: 
 }
 
 const shadeCache = new Map<string, string>();
-export function shade(hex: string, f: number): string {
+/**
+ * Art switches. The WebGL renderer bakes sprites with flatter baked shading
+ * (shadeK < 1) because its lighting pass adds the form back from normals.
+ */
+export const art = { shadeK: 1 };
+
+export function shade(hex: string, f0: number): string {
+  const f = 1 - (1 - f0) * art.shadeK;
   const k = hex + f;
   let out = shadeCache.get(k);
   if (!out) {
@@ -1123,17 +1208,19 @@ export function lerp(a: number, b: number, t: number): number {
 // =====================================================================
 
 /**
- * Shadow offset per unit of height. Swings from +x (morning) to +y (evening),
- * shortest at noon; long shadows at the ends sell the time of day.
+ * Shadow offset per unit of height. The sun crosses the sky east → south →
+ * west (the viewer looks north), so fronts are lit at noon, sides at the ends
+ * of the day, and shadows swing from west to north to east — short at noon,
+ * long at dawn and dusk.
  */
 export function sunVector(world: World): [number, number] {
   const p = Math.min(1, Math.max(0, (world.dayPhase - DAY.dawnEnd * 0.5) / (DAY.nightStart - DAY.dawnEnd)));
-  const ang = p * (Math.PI / 2);
   const len = 0.45 + 1.6 * Math.abs(p - 0.5) * 2;
-  return [Math.cos(ang) * len, Math.sin(ang) * len];
+  // Towards the sun on the ground: (cos πp, sin πp). Shadows go the other way.
+  return [-Math.cos(Math.PI * p) * len, -Math.sin(Math.PI * p) * len * 0.75];
 }
 
-/** Square footprint swept along (sx, sy) ≥ 0: its hull is this hexagon (ground coords). */
+/** Square footprint swept along (sx, sy): convex hull of both squares (ground coords). */
 export function shadowHex(x: number, y: number, h: number, sx: number, sy: number): [number, number][] {
   const a = x + 0.08;
   const b = x + 0.92;
@@ -1141,7 +1228,22 @@ export function shadowHex(x: number, y: number, h: number, sx: number, sy: numbe
   const d = y + 0.92;
   const u = sx * h;
   const w = sy * h;
-  return [[a, c], [b, c], [b + u, c + w], [b + u, d + w], [a + u, d + w], [a, d]];
+  const pts: [number, number][] = [[a, c], [b, c], [b, d], [a, d], [a + u, c + w], [b + u, c + w], [b + u, d + w], [a + u, d + w]];
+  // Monotone-chain hull of 8 points.
+  pts.sort((p, q) => p[0] - q[0] || p[1] - q[1]);
+  const cross = (o: number[], p: number[], q: number[]) => (p[0] - o[0]) * (q[1] - o[1]) - (p[1] - o[1]) * (q[0] - o[0]);
+  const lo: [number, number][] = [];
+  for (const p of pts) {
+    while (lo.length >= 2 && cross(lo[lo.length - 2], lo[lo.length - 1], p) <= 0) lo.pop();
+    lo.push(p);
+  }
+  const hi: [number, number][] = [];
+  for (let i = pts.length - 1; i >= 0; i--) {
+    const p = pts[i];
+    while (hi.length >= 2 && cross(hi[hi.length - 2], hi[hi.length - 1], p) <= 0) hi.pop();
+    hi.push(p);
+  }
+  return lo.slice(0, -1).concat(hi.slice(0, -1));
 }
 
 export interface LightSource {
@@ -1149,6 +1251,8 @@ export interface LightSource {
   y: number;
   r: number;
   color: string | null;
+  b: Building;
+  on: boolean;
 }
 
 /** Light sources at night: core, armed turrets, furnaces, miners. */
@@ -1162,16 +1266,16 @@ export function lightSources(world: World, v: View): LightSource[] {
     const y = ky(k) + 0.5;
     switch (t.b) {
       case Building.Core:
-        lights.push({ x, y, r: 4.8, color: 'rgba(111,224,192,0.10)' });
+        lights.push({ x, y, r: 4.8, color: 'rgba(111,224,192,0.10)', b: t.b, on: true });
         break;
       case Building.Turret:
-        if (t.ammo > 0) lights.push({ x, y, r: 2.4, color: null });
+        if (t.ammo > 0) lights.push({ x, y, r: 2.4, color: null, b: t.b, on: true });
         break;
       case Building.Furnace:
-        lights.push({ x, y, r: t.cd > 0 ? 2.3 * flicker : 1.1, color: t.cd > 0 ? 'rgba(251,146,60,0.16)' : null });
+        lights.push({ x, y, r: t.cd > 0 ? 2.3 * flicker : 1.1, color: t.cd > 0 ? 'rgba(251,146,60,0.16)' : null, b: t.b, on: t.cd > 0 });
         break;
       case Building.Miner:
-        lights.push({ x, y, r: 1.1, color: null });
+        lights.push({ x, y, r: 1.1, color: null, b: t.b, on: t.cd > 0 });
         break;
     }
   }

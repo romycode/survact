@@ -10,7 +10,7 @@ Factory + tower defense en tiempo continuo, en un mundo infinito. TypeScript sin
 - **Agua** bloquea construcción y enemigos.
 - **Estilo cartoon steampunk industrial.** Latón, cobre, hierro remachado y madera aceitada sobre un suelo de musgo con guijarros y algún engranaje perdido; agua verdosa con orillas de tierra. Contornos de tinta sepia. Núcleo = caldera de cobre con cúpula de latón, manómetro y un cristal de éter flotante · muro = baluarte de hierro remachado con remate de latón · minero = torre de perforación con arriostrado y engranaje que gira al trabajar · horno = caldera de cobre con chimenea de hierro y humo · torreta = cúpula de latón con cañón de cobre · enemigos = bichos de cuerda con su llave de latón. UI: placas de hierro con marco de latón y remaches, botones-válvula de latón, rótulos en Alfa Slab One.
 - Solo puedes construir a 6 tiles de algo tuyo (zona clara). Los enemigos aparecen más allá de tu edificio más lejano; durante la construcción se ven el punto de spawn y la ruta prevista.
-- **Día y noche.** Ciclo de 4 min (≈90 s de noche). De noche los enemigos van un 30% más rápidos y solo se ve lo iluminado: núcleo, torretas con munición, hornos encendidos y mineros. De día las sombras giran con el sol. El ciclo sale del tick de la simulación: la pausa lo para.
+- **Día y noche.** Ciclo de 4 min (≈90 s de noche). De noche los enemigos van un 30% más rápidos y solo se ve lo iluminado: núcleo, torretas con munición, hornos encendidos y mineros. De día el sol cruza de este a oeste por el sur y las sombras giran con él. El ciclo sale del tick de la simulación: la pausa lo para.
 - **Tiempo continuo.** La fábrica produce siempre y se construye en cualquier momento. Las oleadas llegan con cuenta atrás (60 s la primera, 40 s desde que sale el último enemigo de la anterior); si vas lento, se solapan. "Llamar ya" adelanta la siguiente. `P` pausa.
 
 ```bash
@@ -53,7 +53,10 @@ src/
   plans.ts           planos fantasma: validez, coste acumulado, commit a comandos
   inspector.ts       ficha del edificio: HTML-in-Canvas o overlay con anchor positioning
   render.ts          el dibujo (fuente única del arte) y el renderer Canvas 2D
-  gl.ts              renderer WebGL2: atlas precocinado, terreno por chunks, proyección en el shader
+  gl.ts              renderer WebGL2: atlas (color + normales), G-buffer, pasada de luz, capas dinámicas
+  glTerrain.ts       terreno procedural en fragment shader sobre una ventana de tiles
+  glStatic.ts        edificios, cintas, sombras y AO en buffers estáticos
+  belts.ts           forma de las cintas (recta/curva, remates) y su geometría, compartida por GL y 2D
   terrainLayer.ts    terreno estático pintado por chunks 8×8 en bitmaps (caché LRU)
   sim/               simulación pura: sin DOM ni reloj
     world.ts         estado, cuenta atrás de oleadas, apply(cmd), tick(), economía, spawns
@@ -76,16 +79,19 @@ Reglas que hay que mantener:
 `sx = ox + x·s`, `sy = oy + y·s·0.72 − z·s·0.68`. Sin rotación: el suelo es un rectángulo aplastado, cada edificio enseña tapa y cara sur, y se dibuja de norte a sur. 
 ## WebGL2
 
-El arte se sigue dibujando con el código Canvas 2D; WebGL solo cambia cómo llega a pantalla. El primer intento (historial de git) iba peor que 2D en móvil por cuatro cosas, y esta versión las evita:
+Todo lo que se ve lo compone la GPU; el procesador solo dibuja el arte una vez, al arrancar.
 
-1. **Subidas desde canvas acelerados.** Cada sprite y chunk se pintaba en un OffscreenCanvas en GPU y se subía como textura: en móvil eso es una lectura de vuelta de la GPU por subida. Ahora todo se pinta en canvas de CPU (`willReadFrequently`) y subir es copiar memoria.
-2. **Sprites perezosos.** Las poses de los bichos y las fases de las cintas se pintaban la primera vez que aparecían, o sea a tirones en plena oleada. Ahora el atlas entero (~300 sprites) se hornea al arrancar.
-3. **Repintar al hacer zoom.** Atlas y terreno se tiraban y se repintaban al zoom exacto cada vez que soltabas el pellizco. Ahora hay niveles fijos de resolución (sprites 48/96/144 px por tile, terreno 32–128) con mipmaps: el zoom no repinta nada. Solo al cruzar de nivel se rehace, unos ms por frame en segundo plano, y se cambia cuando está completo.
-4. **Fill rate en pantallas 3×.** El backing store se limita a 2× (2,25× menos píxeles).
+- **Terreno en shader.** Una ventana de 512×512 tiles alrededor de la cámara vive en una textura de 1 byte por tile (tipo de suelo + pepitas de la veta). Un fragment shader pinta por píxel el césped, las matas, piedras y engranajes, el agua con crestas y oleaje, orillas, espuma, vetas y rejilla: nítido a cualquier zoom, y al moverte solo se rellenan los tiles nuevos. Agotar una veta es actualizar 1 texel.
+- **Edificios, cintas y sombras en buffers fijos.** Las instancias se rehacen solo al construir, quitar o girar. Por frame se sube 1 byte por edificio (ángulo de la torreta, horno encendido, fase de la gema) a una textura de estado, y el vertex shader busca el sprite en una tabla. Las sombras (cuadrado barrido por el sol, con stencil) y la oclusión ambiental se generan en el vertex shader.
+- **Cintas como una sola línea.** Cada cinta sabe si es recta o curva (le entra algo por un lado) y si empieza o acaba una tirada; un shader las dibuja continuas: sin marco por casilla, curvas reales, chevrones que corren seguidos, placa al inicio y tope de latón al final. Los items siguen la curva. Igual en Canvas 2D.
+- **Luz 2,5D.** Cada sprite se hornea dos veces: color y mapa de normales, pintado por el mismo código de dibujo (`normalCtx` cambia cada cara por su normal y las superficies curvas por degradados). La escena va a un G-buffer (color + normal/altura) y una pasada a pantalla completa la ilumina:
+  - el sol cruza este → sur → oeste: frentes iluminados a mediodía, laterales a primera y última hora, sombras que giran y se alargan;
+  - brillo especular en el latón y el cobre, destellos del sol en el agua animada;
+  - de noche, hasta 24 luces de colores por píxel (núcleo, torretas, hornos, mineros) que iluminan las caras que miran hacia ellas, y halos suaves en el éter y las bocas de los hornos.
+  El sombreado pintado del arte se aplana al hornear (`art.shadeK`) para que el volumen lo ponga la luz.
+- **Atlas sin tirones.** Todo se pinta en canvas de CPU (subir es copiar memoria, sin lecturas de vuelta de la GPU), a niveles fijos de resolución con mipmaps; el zoom no repinta y cambiar de nivel se hace por detrás. Backing store limitado a 2×.
 
-Además la proyección va en el vertex shader (la cámara son 3 uniforms) y el terreno se pinta con presupuesto de tiempo por frame (un chunk aún sin pintar se ve como césped liso un instante).
-
-`?fps` muestra fps, el peor frame del último segundo y el DPR efectivo; `?render=2d` fuerza Canvas 2D para comparar en el mismo móvil.
+`?fps` muestra fps, el peor frame del último segundo y el DPR efectivo; `?render=2d` fuerza Canvas 2D para comparar.
 
 ## Rendimiento (Canvas 2D)
 

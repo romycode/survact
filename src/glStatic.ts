@@ -7,7 +7,7 @@
 // Belts are drawn procedurally by a shader as continuous lines (see belts.ts),
 // and sun shadows are built in the vertex shader from the same buffer.
 
-import { DEPTH } from './camera';
+import { DEPTH, RISE } from './camera';
 import { beltLooks, BAND0, CAP_END, CAP_START, CAP_W, RAIL0 } from './belts';
 import { AIM_STEPS, BELT_COLORS, HEIGHT, aimStep } from './render';
 import { Building, isBelt } from './sim/defs';
@@ -92,6 +92,7 @@ uniform highp sampler2D u_table;
 uniform highp usampler2D u_state;
 uniform int u_first;
 out vec2 v_uv;
+out float v_z;
 void main() {
   int id = u_first + gl_InstanceID;
   int slot = int(a_inst.z) + int(texelFetch(u_state, ivec2(id & 255, id >> 8), 0).r);
@@ -101,26 +102,48 @@ void main() {
   vec2 p = vec2(u_cam.x + a_inst.x * sc, u_cam.y + a_inst.y * sc * ${D}) + (g.xy + a_corner * g.zw) * sc;
   ${POS}
   v_uv = mix(uv.xy, uv.zw, a_corner);
+  // Height of this pixel, taken on the building's vertical centre plane (for lighting).
+  float groundY = u_cam.y + (a_inst.y + 0.5) * sc * ${D};
+  v_z = (groundY - p.y) / (sc * ${RISE.toFixed(4)});
 }`;
 
 const STATIC_FS = `#version 300 es
 precision mediump float;
 uniform sampler2D u_tex;
+uniform sampler2D u_ntex;
 in vec2 v_uv;
-out vec4 o;
-void main() { o = texture(u_tex, v_uv); }`;
+in float v_z;
+layout(location=0) out vec4 o;
+layout(location=1) out vec4 o_n;
+void main() {
+  o = texture(u_tex, v_uv);
+  vec4 nn = texture(u_ntex, v_uv);
+  vec2 n = nn.a > 0.05 ? (nn.rg / nn.a) * 2.0 - 1.0 : vec2(0.0);
+  o_n = vec4(n * 0.5 + 0.5, clamp(v_z, 0.0, 2.3) / 2.5, 1.0) * o.a;
+}`;
 
+// Footprint swept along the sun: union of both squares and the four edge
+// sweeps (6 quads, 36 vertices); the stencil keeps overlaps from doubling.
 const SHADOW_VS = `#version 300 es
 layout(location=1) in vec4 a_inst;
 uniform vec2 u_res;
 uniform vec3 u_cam;
 uniform vec2 u_sun;
-const int FAN[12] = int[12](0, 1, 2, 0, 2, 3, 0, 3, 4, 0, 4, 5);
+const int TRI[6] = int[6](0, 1, 2, 0, 2, 3);
 void main() {
-  float a = a_inst.x + 0.08, b = a_inst.x + 0.92, c = a_inst.y + 0.08, d = a_inst.y + 0.92;
-  float u = u_sun.x * a_inst.w, w = u_sun.y * a_inst.w;
-  vec2 hex[6] = vec2[6](vec2(a, c), vec2(b, c), vec2(b + u, c + w), vec2(b + u, d + w), vec2(a + u, d + w), vec2(a, d));
-  vec2 g = hex[FAN[gl_VertexID]];
+  vec2 T = u_sun * a_inst.w;
+  vec2 sq[4] = vec2[4](vec2(0.08, 0.08), vec2(0.92, 0.08), vec2(0.92, 0.92), vec2(0.08, 0.92));
+  int q = gl_VertexID / 6;
+  int k = TRI[gl_VertexID % 6];
+  vec2 g;
+  if (q == 0) g = sq[k];
+  else if (q == 1) g = sq[k] + T;
+  else {
+    int e = q - 2;                       // edge e: sq[e] -> sq[e+1]
+    vec2 p0 = sq[e], p1 = sq[(e + 1) & 3];
+    g = k == 0 ? p0 : k == 1 ? p1 : k == 2 ? p1 + T : p0 + T;
+  }
+  g += a_inst.xy;
   float sc = u_cam.z;
   vec2 p = vec2(u_cam.x + g.x * sc, u_cam.y + g.y * sc * ${D});
   ${POS}
@@ -129,8 +152,36 @@ void main() {
 const SOLID_FS = `#version 300 es
 precision mediump float;
 uniform vec4 u_col;
-out vec4 o;
-void main() { o = u_col; }`;
+layout(location=0) out vec4 o;
+layout(location=1) out vec4 o_n;
+void main() { o = u_col; o_n = vec4(0.0); }`;
+
+// Ambient occlusion: a soft dark skirt around each building's footprint.
+const AO_VS = `#version 300 es
+layout(location=1) in vec4 a_inst;
+uniform vec2 u_res;
+uniform vec3 u_cam;
+out vec2 v_l;
+void main() {
+  vec2 c = vec2(float(gl_VertexID & 1), float(gl_VertexID >> 1));
+  v_l = mix(vec2(-0.3), vec2(1.3), c);
+  vec2 g = a_inst.xy + v_l;
+  float sc = u_cam.z;
+  vec2 p = vec2(u_cam.x + g.x * sc, u_cam.y + g.y * sc * ${D});
+  ${POS}
+}`;
+
+const AO_FS = `#version 300 es
+precision mediump float;
+in vec2 v_l;
+layout(location=0) out vec4 o;
+layout(location=1) out vec4 o_n;
+void main() {
+  vec2 q = max(abs(v_l - 0.5) - 0.42, 0.0);
+  float a = 0.2 * (1.0 - smoothstep(0.0, 0.24, length(q)));
+  o = vec4(vec3(0.16, 0.11, 0.08) * a, a);
+  o_n = vec4(0.0);
+}`;
 
 function vec(css: string): string {
   const h = css.replace('#', '');
@@ -163,7 +214,8 @@ flat in ivec3 v_k;
 flat in int v_fast;
 uniform vec2 u_phase;  // slow, fast
 uniform float u_px;    // ground units per device px (along the squashed axis)
-out vec4 o;
+layout(location=0) out vec4 o;
+layout(location=1) out vec4 o_n;
 const vec3 FRAME = ${vec(BELT_COLORS.frame)};
 const vec3 BAND = ${vec(BELT_COLORS.band)};
 const vec3 FAST_BAND = ${vec(BELT_COLORS.fastBand)};
@@ -223,6 +275,7 @@ void main() {
     col = mix(col, INK, cov(abs(u - u1) - 0.6 * u_px * 1.6));
   }
   o = vec4(col * a, a);
+  o_n = vec4(0.5, 0.5, 0.008, 1.0) * a;
 }`;
 
 function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
@@ -246,6 +299,7 @@ export class GLStatic {
   private readonly prog: WebGLProgram;
   private readonly shadowProg: WebGLProgram;
   private readonly beltProg: WebGLProgram;
+  private readonly aoProg: WebGLProgram;
   private readonly u: Record<string, WebGLUniformLocation | null> = {};
   private readonly vao: WebGLVertexArrayObject;
   private readonly shadowVao: WebGLVertexArrayObject;
@@ -271,12 +325,14 @@ export class GLStatic {
     this.prog = compile(gl, STATIC_VS, STATIC_FS);
     this.shadowProg = compile(gl, SHADOW_VS, SOLID_FS);
     this.beltProg = compile(gl, BELT_VS, BELT_FS);
+    this.aoProg = compile(gl, AO_VS, AO_FS);
     for (const [p, names] of [
-      [this.prog, ['u_res', 'u_cam', 'u_table', 'u_state', 'u_first', 'u_tex']],
+      [this.prog, ['u_res', 'u_cam', 'u_table', 'u_state', 'u_first', 'u_tex', 'u_ntex']],
+      [this.aoProg, ['u_res', 'u_cam']],
       [this.shadowProg, ['u_res', 'u_cam', 'u_sun', 'u_col']],
       [this.beltProg, ['u_res', 'u_cam', 'u_phase', 'u_px']],
     ] as const) {
-      const tag = p === this.prog ? 's' : p === this.shadowProg ? 'h' : 'b';
+      const tag = p === this.prog ? 's' : p === this.shadowProg ? 'h' : p === this.aoProg ? 'a' : 'b';
       for (const n of names) this.u[tag + n] = gl.getUniformLocation(p, n);
     }
 
@@ -422,7 +478,7 @@ export class GLStatic {
     return this.ys[i] + 1 + this.xs[i] * 1e-4;
   }
 
-  drawBuildings(i0: number, i1: number, cam: { ox: number; oy: number; scale: number }, cssW: number, cssH: number, atlas: WebGLTexture): void {
+  drawBuildings(i0: number, i1: number, cam: { ox: number; oy: number; scale: number }, cssW: number, cssH: number, atlas: WebGLTexture, normals: WebGLTexture): void {
     if (i1 <= i0) return;
     const gl = this.gl;
     gl.useProgram(this.prog);
@@ -432,6 +488,9 @@ export class GLStatic {
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, atlas);
     gl.uniform1i(this.u.su_tex!, 0);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, normals);
+    gl.uniform1i(this.u.su_ntex!, 4);
     gl.activeTexture(gl.TEXTURE2);
     gl.bindTexture(gl.TEXTURE_2D, this.table);
     gl.uniform1i(this.u.su_table!, 2);
@@ -444,6 +503,19 @@ export class GLStatic {
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
     gl.vertexAttribPointer(1, 4, gl.FLOAT, false, STRIDE * 4, i0 * STRIDE * 4);
     gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, i1 - i0);
+  }
+
+  drawAO(cam: { ox: number; oy: number; scale: number }, cssW: number, cssH: number): void {
+    const n = this.tiles.length;
+    if (n === 0) return;
+    const gl = this.gl;
+    gl.useProgram(this.aoProg);
+    gl.uniform2f(this.u.au_res!, cssW, cssH);
+    gl.uniform3f(this.u.au_cam!, cam.ox, cam.oy, cam.scale);
+    gl.bindVertexArray(this.shadowVao);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buf);
+    gl.vertexAttribPointer(1, 4, gl.FLOAT, false, STRIDE * 4, 0);
+    gl.drawArraysInstanced(gl.TRIANGLE_STRIP, 0, 4, n);
   }
 
   drawShadows(cam: { ox: number; oy: number; scale: number }, cssW: number, cssH: number, sun: [number, number], color: [number, number, number, number]): void {
@@ -459,7 +531,7 @@ export class GLStatic {
     gl.enable(gl.STENCIL_TEST);
     gl.stencilFunc(gl.EQUAL, 0, 0xff);
     gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
-    gl.drawArraysInstanced(gl.TRIANGLES, 0, 12, n);
+    gl.drawArraysInstanced(gl.TRIANGLES, 0, 36, n);
     gl.disable(gl.STENCIL_TEST);
   }
 

@@ -22,6 +22,13 @@
 //
 // Plus: projection is done in the vertex shader from world coordinates
 // (camera = 3 uniforms), so per-frame CPU work is filling one instance buffer.
+//
+// Lighting (2.5D): every sprite is baked twice — colour, and a normal map
+// painted by the same art code (render.ts normalCtx). The scene is drawn into
+// a G-buffer (albedo + normal/height); a full-screen pass then lights it:
+// sun by time of day, coloured point lights at night that light the faces
+// turned towards them, sun glints on animated water. Baked shading in the art
+// is flattened (art.shadeK) so the light supplies the form.
 
 import { DEPTH, RISE, type Camera } from './camera';
 import {
@@ -31,8 +38,10 @@ import {
   NO_HOVER,
   TOOL_BUILDING,
   aimStep,
+  art,
   drawBuilding,
   enemyPose,
+  normalCtx,
   groundArrow,
   isDirected,
   lerp,
@@ -72,6 +81,7 @@ uniform vec2 u_res;
 uniform vec3 u_cam;                 // ox, oy (CSS px), scale (CSS px per tile)
 out vec2 v_uv;
 out vec4 v_col;
+out float v_z;                      // height above ground of this pixel (for lighting)
 void main() {
   float s = u_cam.z;
   vec2 base = vec2(u_cam.x + a_pos.x * s, u_cam.y + a_pos.y * s * ${DEPTH.toFixed(4)} - a_pos.z * s * ${RISE.toFixed(4)});
@@ -79,42 +89,98 @@ void main() {
   gl_Position = vec4(p / u_res * 2.0 - 1.0, 0.0, 1.0) * vec4(1.0, -1.0, 1.0, 1.0);
   v_uv = mix(a_uv.xy, a_uv.zw, a_corner);
   v_col = a_col;
+  v_z = a_pos.z + (base.y - p.y) / (s * ${RISE.toFixed(4)});
 }`;
 
 const SPRITE_FS = `#version 300 es
 precision mediump float;
 uniform sampler2D u_tex;
+uniform sampler2D u_ntex;
+uniform int u_nmode;   // 0: leave normals, 1: normal atlas, 2: flat ground
 in vec2 v_uv;
 in vec4 v_col;
-out vec4 o;
-void main() { o = texture(u_tex, v_uv) * v_col; }`;
-
-const SOLID_VS = `#version 300 es
-layout(location=0) in vec2 a_pos;
-uniform vec2 u_res;
-void main() { gl_Position = vec4(a_pos / u_res * 2.0 - 1.0, 0.0, 1.0) * vec4(1.0, -1.0, 1.0, 1.0); }`;
-
-const SOLID_FS = `#version 300 es
-precision mediump float;
-uniform vec4 u_col;
-out vec4 o;
-void main() { o = u_col; }`;
-
-const DARK_VS = `#version 300 es
-layout(location=0) in vec2 a_corner;
-out vec2 v_uv;
-void main() { v_uv = a_corner; gl_Position = vec4(a_corner * 2.0 - 1.0, 0.0, 1.0); }`;
-
-const DARK_FS = `#version 300 es
-precision mediump float;
-uniform sampler2D u_light;
-uniform vec4 u_dark; // rgb tint (premultiplied later), a = darkness amount
-in vec2 v_uv;
-out vec4 o;
+in float v_z;
+layout(location=0) out vec4 o;
+layout(location=1) out vec4 o_n;
 void main() {
-  float l = clamp(texture(u_light, v_uv).a, 0.0, 1.0);
-  float a = u_dark.a * (1.0 - l);
-  o = vec4(u_dark.rgb * a, a);
+  o = texture(u_tex, v_uv) * v_col;
+  if (u_nmode == 0) { o_n = vec4(0.0); return; }
+  vec2 n = vec2(0.0);
+  float z = 0.01;
+  if (u_nmode == 1) {
+    vec4 nn = texture(u_ntex, v_uv);
+    if (nn.a > 0.05) n = (nn.rg / nn.a) * 2.0 - 1.0;
+    z = clamp(v_z, 0.0, 2.3);
+  }
+  o_n = vec4(n * 0.5 + 0.5, z / 2.5, 1.0) * o.a;
+}`;
+
+// Lighting: albedo × (sun, ambient) + point lights, night tint where unlit.
+const MAXL = 24;
+const LIGHT_VS = `#version 300 es
+layout(location=0) in vec2 a_corner;
+void main() { gl_Position = vec4(a_corner * 2.0 - 1.0, 0.0, 1.0); }`;
+
+const LIGHT_FS = `#version 300 es
+precision highp float;
+uniform sampler2D u_albedo;
+uniform sampler2D u_normal;
+uniform vec3 u_cam;
+uniform vec2 u_res;
+uniform float u_dpr;
+uniform vec3 u_sun;       // direction towards the sun
+uniform vec3 u_sunCol;
+uniform float u_amb;
+uniform float u_ref;      // normaliser: a flat top at noon = 1
+uniform float u_dark;     // 0 day … 1 night
+uniform float u_golden;
+uniform int u_nl;
+uniform vec4 u_lp[${MAXL}];   // x, y, z, radius
+uniform vec3 u_lc[${MAXL}];
+out vec4 o;
+const vec3 VIEW = normalize(vec3(0.0, ${RISE.toFixed(4)}, ${DEPTH.toFixed(4)}));
+const vec3 NIGHT = vec3(0.086, 0.063, 0.133);
+void main() {
+  ivec2 fc = ivec2(gl_FragCoord.xy);
+  vec3 a = texelFetch(u_albedo, fc, 0).rgb;
+  vec4 g = texelFetch(u_normal, fc, 0);
+  vec2 nxy = g.rg * 2.0 - 1.0;
+  vec3 n = vec3(nxy, sqrt(max(0.0, 1.0 - dot(nxy, nxy))));
+  bool water = g.b > 0.98;
+  float z = water ? 0.0 : g.b * 2.5;
+
+  // Sun: diffuse + ambient, normalised so a flat top at noon keeps its colour.
+  float diff = max(dot(n, u_sun), 0.0);
+  vec3 sunL = (vec3(u_amb) + u_sunCol * diff) / u_ref;
+  vec3 col = a * sunL;
+  // Brass and copper shine: a sun highlight on warm metal (told apart by colour).
+  float metal = smoothstep(0.22, 0.42, a.r - a.b) * step(0.04, z);
+  vec3 hm = normalize(u_sun + VIEW);
+  col += u_sunCol * pow(max(dot(n, hm), 0.0), 32.0) * metal * 0.55;
+  if (water) {
+    vec3 h = normalize(u_sun + VIEW);
+    float sp = pow(max(dot(n, h), 0.0), 90.0);
+    col += u_sunCol * sp * 0.55 * (1.0 - u_dark);
+  }
+  col = mix(col, vec3(1.0, 0.5, 0.19), 0.16 * u_golden);
+
+  if (u_dark > 0.01) {
+    vec2 css = vec2(gl_FragCoord.x / u_dpr, u_res.y - gl_FragCoord.y / u_dpr);
+    float s = u_cam.z;
+    vec3 P = vec3((css.x - u_cam.x) / s, (css.y - u_cam.y + z * s * ${RISE.toFixed(4)}) / (s * ${DEPTH.toFixed(4)}), z);
+    vec3 acc = vec3(0.0);
+    for (int i = 0; i < ${MAXL}; i++) {
+      if (i >= u_nl) break;
+      vec3 d = u_lp[i].xyz - P;
+      float dist = length(d);
+      float att = clamp(1.0 - dist / u_lp[i].w, 0.0, 1.0);
+      att *= att;
+      acc += u_lc[i] * att * (0.35 + 0.65 * max(dot(n, d / max(dist, 1e-3)), 0.0));
+    }
+    float lit = clamp(max(acc.r, max(acc.g, acc.b)), 0.0, 1.0);
+    col = mix(col, NIGHT, 0.74 * u_dark * (1.0 - lit)) + a * acc * u_dark * 0.85;
+  }
+  o = vec4(col, 1.0);
 }`;
 
 function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
@@ -185,6 +251,8 @@ interface Job {
   /** px of one tile in the sprite (usually the level; fixed for level-free sprites) */
   unit: number;
   paint: (g: Ctx2D) => void;
+  /** Same drawing into a normal map (lit sprites only). */
+  paintN?: (g: Ctx2D) => void;
   x?: number;
   y?: number;
 }
@@ -211,6 +279,17 @@ function blankTile(b: number, dir: number): Tile {
   return { b, hp: 1, dir, cd: 0, ammo: 1, inp: 0, out: 0, item: 0, prog: 0 } as Tile;
 }
 
+/** Paint with flattened baked shading: the lighting pass adds the form. */
+function flat(fn: () => void): void {
+  const k = art.shadeK;
+  art.shadeK = 0.35;
+  try {
+    fn();
+  } finally {
+    art.shadeK = k;
+  }
+}
+
 /** Every sprite the game can show, at level S (device px per tile). */
 function spriteJobs(S: number, dpr: number): Job[] {
   const jobs: Job[] = [];
@@ -223,7 +302,16 @@ function spriteJobs(S: number, dpr: number): Job[] {
     const h = Math.ceil(S * (DEPTH + top * RISE + 2 * PAD));
     const ax = PAD * S;
     const ay = (PAD + top * RISE) * S;
-    jobs.push({ id, w, h, ax, ay, unit: S, paint: (g) => drawBuilding(g, projAt(S, ax, ay), 0, 0, t, time, aim, false) });
+    jobs.push({
+      id,
+      w,
+      h,
+      ax,
+      ay,
+      unit: S,
+      paint: (g) => flat(() => drawBuilding(g, projAt(S, ax, ay), 0, 0, t, time, aim, false)),
+      paintN: (g) => drawBuilding(normalCtx(g), projAt(S, ax, ay), 0, 0, t, time, aim, false),
+    });
   };
   for (let q = 0; q < CORE_PHASES; q++) building(ID.building(Building.Core, 0, q), Building.Core, blankTile(Building.Core, 0), CORE_TIME(q));
   building(ID.building(Building.Wall, 0, 0), Building.Wall, blankTile(Building.Wall, 0), 0);
@@ -259,7 +347,8 @@ function spriteJobs(S: number, dpr: number): Job[] {
           ax: max,
           ay: may,
           unit: S,
-          paint: (g) => paintMite(g, max, may, S, hq / MITE_HOP, sq / MITE_SPIN, (lq / MITE_LOOK) * Math.PI * 2, ink),
+          paint: (g) => flat(() => paintMite(g, max, may, S, hq / MITE_HOP, sq / MITE_SPIN, (lq / MITE_LOOK) * Math.PI * 2, ink)),
+          paintN: (g) => paintMite(normalCtx(g), max, may, S, hq / MITE_HOP, sq / MITE_SPIN, (lq / MITE_LOOK) * Math.PI * 2, ink),
         });
       }
     }
@@ -342,6 +431,7 @@ const GAP = 4;
  */
 class AtlasBuild {
   readonly tex: WebGLTexture;
+  readonly ntex: WebGLTexture;
   readonly W: number;
   readonly H: number;
   readonly S: number;
@@ -381,17 +471,22 @@ class AtlasBuild {
     this.W = W;
     this.H = H;
     this.jobs = jobs;
-    this.tex = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, this.tex);
-    gl.texStorage2D(gl.TEXTURE_2D, 3, gl.RGBA8, W, H);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 2);
-    // Clear to transparent (texStorage content is undefined until written).
-    const zero = new Uint8Array(W * 64 * 4);
-    for (let yy = 0; yy < H; yy += 64) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, yy, W, Math.min(64, H - yy), gl.RGBA, gl.UNSIGNED_BYTE, zero);
+    const mk = () => {
+      const t = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texStorage2D(gl.TEXTURE_2D, 3, gl.RGBA8, W, H);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 2);
+      // Clear to transparent (texStorage content is undefined until written).
+      const zero = new Uint8Array(W * 64 * 4);
+      for (let yy = 0; yy < H; yy += 64) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, yy, W, Math.min(64, H - yy), gl.RGBA, gl.UNSIGNED_BYTE, zero);
+      return t;
+    };
+    this.tex = mk();
+    this.ntex = mk();
   }
 
   get progress(): number {
@@ -418,7 +513,17 @@ class AtlasBuild {
       j.paint(g);
       g.restore();
       const img = g.getImageData(0, 0, j.w, j.h);
+      gl.bindTexture(gl.TEXTURE_2D, this.tex);
       gl.texSubImage2D(gl.TEXTURE_2D, 0, j.x!, j.y!, gl.RGBA, gl.UNSIGNED_BYTE, img);
+      if (j.paintN) {
+        g.setTransform(1, 0, 0, 1, 0, 0);
+        g.clearRect(0, 0, j.w, j.h);
+        g.save();
+        j.paintN(g);
+        g.restore();
+        gl.bindTexture(gl.TEXTURE_2D, this.ntex);
+        gl.texSubImage2D(gl.TEXTURE_2D, 0, j.x!, j.y!, gl.RGBA, gl.UNSIGNED_BYTE, g.getImageData(0, 0, j.w, j.h));
+      }
       const inset = j.id === ID.white ? 3 : 0; // sample the middle of the white block
       this.map.set(j.id, {
         u0: (j.x! + inset) / this.W,
@@ -434,6 +539,9 @@ class AtlasBuild {
     }
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     if (this.i < this.jobs.length) return false;
+    gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.generateMipmap(gl.TEXTURE_2D);
+    gl.bindTexture(gl.TEXTURE_2D, this.ntex);
     gl.generateMipmap(gl.TEXTURE_2D);
     this.scratch = null;
     this.ready = true;
@@ -442,6 +550,7 @@ class AtlasBuild {
 
   dispose(): void {
     this.gl.deleteTexture(this.tex);
+    this.gl.deleteTexture(this.ntex);
   }
 }
 
@@ -488,21 +597,10 @@ class Batch {
 export class GLRenderer {
   readonly gl: WebGL2RenderingContext;
   private readonly sprite: WebGLProgram;
-  private readonly solid: WebGLProgram;
-  private readonly darkProg: WebGLProgram;
-  private readonly u: {
-    sRes: WebGLUniformLocation;
-    sCam: WebGLUniformLocation;
-    sTex: WebGLUniformLocation;
-    oRes: WebGLUniformLocation;
-    oCol: WebGLUniformLocation;
-    dLight: WebGLUniformLocation;
-    dDark: WebGLUniformLocation;
-  };
+  private readonly lightProg: WebGLProgram;
+  private readonly u: Record<string, WebGLUniformLocation | null> = {};
   private readonly vao: WebGLVertexArrayObject;
   private readonly instBuf: WebGLBuffer;
-  private readonly solidVao: WebGLVertexArrayObject;
-  private readonly solidBuf: WebGLBuffer;
   private readonly quadVao: WebGLVertexArrayObject;
   private readonly batch = new Batch();
   private atlas: AtlasBuild;
@@ -510,10 +608,8 @@ export class GLRenderer {
   private readonly terrain: GLTerrain;
   private readonly statics: GLStatic;
   private readonly glowTex: WebGLTexture;
-  private lightFbo: WebGLFramebuffer | null = null;
-  private lightTex: WebGLTexture | null = null;
-  private lightW = 0;
-  private lightH = 0;
+  /** G-buffer: albedo + (normal.xy, height) with depth/stencil, at drawing-buffer size. */
+  private gb: { fbo: WebGLFramebuffer; albedo: WebGLTexture; normal: WebGLTexture; ds: WebGLRenderbuffer; w: number; h: number } | null = null;
   private cam!: Camera;
   private cssW = 0;
   private cssH = 0;
@@ -525,17 +621,11 @@ export class GLRenderer {
     this.gl = gl;
     this.dpr = dpr;
     this.sprite = compile(gl, SPRITE_VS, SPRITE_FS);
-    this.solid = compile(gl, SOLID_VS, SOLID_FS);
-    this.darkProg = compile(gl, DARK_VS, DARK_FS);
-    this.u = {
-      sRes: gl.getUniformLocation(this.sprite, 'u_res')!,
-      sCam: gl.getUniformLocation(this.sprite, 'u_cam')!,
-      sTex: gl.getUniformLocation(this.sprite, 'u_tex')!,
-      oRes: gl.getUniformLocation(this.solid, 'u_res')!,
-      oCol: gl.getUniformLocation(this.solid, 'u_col')!,
-      dLight: gl.getUniformLocation(this.darkProg, 'u_light')!,
-      dDark: gl.getUniformLocation(this.darkProg, 'u_dark')!,
-    };
+    this.lightProg = compile(gl, LIGHT_VS, LIGHT_FS);
+    for (const n of ['u_res', 'u_cam', 'u_tex', 'u_ntex', 'u_nmode']) this.u['s' + n] = gl.getUniformLocation(this.sprite, n);
+    for (const n of ['u_albedo', 'u_normal', 'u_cam', 'u_res', 'u_dpr', 'u_sun', 'u_sunCol', 'u_amb', 'u_ref', 'u_dark', 'u_golden', 'u_nl', 'u_lp', 'u_lc']) {
+      this.u['l' + n] = gl.getUniformLocation(this.lightProg, n);
+    }
 
     const cornerBuf = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, cornerBuf);
@@ -561,13 +651,6 @@ export class GLRenderer {
       gl.vertexAttribPointer(loc, size, gl.FLOAT, false, stride, off * 4);
       gl.vertexAttribDivisor(loc, 1);
     }
-
-    this.solidVao = gl.createVertexArray()!;
-    gl.bindVertexArray(this.solidVao);
-    this.solidBuf = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.solidBuf);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
     this.quadVao = gl.createVertexArray()!;
     gl.bindVertexArray(this.quadVao);
@@ -639,10 +722,14 @@ export class GLRenderer {
       this.statics.setAtlas(this.atlas.map);
     }
 
+    // 1. Scene into the G-buffer (albedo + normal/height)
+    const gb = this.ensureGBuffer();
+    gl.bindFramebuffer(gl.FRAMEBUFFER, gb.fbo);
+    gl.drawBuffers([gl.COLOR_ATTACHMENT0, gl.COLOR_ATTACHMENT1]);
     const bg = parse(C.bg);
-    gl.clearColor(bg[0], bg[1], bg[2], 1);
-    gl.clearStencil(0);
-    gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
+    gl.clearBufferfv(gl.COLOR, 0, [bg[0], bg[1], bg[2], 1]);
+    gl.clearBufferfv(gl.COLOR, 1, [0.5, 0.5, 0, 1]);
+    gl.clearBufferfi(gl.DEPTH_STENCIL, 0, 1, 0);
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
@@ -656,7 +743,13 @@ export class GLRenderer {
     this.shadows(world);
     this.raised(world, ui, alpha, v);
     this.flush(this.atlas.tex);
-    this.lighting(world, alpha, v);
+
+    // 2. Light it onto the screen
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+    this.lighting(world, v);
+
+    // 3. Unlit things on top: emissive glows, eyes, shots, bars
+    this.emissive(world, alpha, v);
     this.overlays(world, alpha, v);
     this.flush(this.atlas.tex);
   }
@@ -704,7 +797,7 @@ export class GLRenderer {
   // ------------------------------------------------------------ passes
 
   private drawTerrain(world: World, cam: Camera): void {
-    this.terrain.draw(world, cam, this.quadVao, this.dpr, this.cssW, this.cssH);
+    this.terrain.draw(world, cam, this.quadVao, this.dpr, this.cssW, this.cssH, world.tickCount / 60);
   }
 
   private ground(world: World, ui: UiState, v: View): void {
@@ -739,6 +832,7 @@ export class GLRenderer {
       const sp = this.sp(ID.item(t.item));
       this.batch.push(ix, iy, 0, sp.dx - 0.2, sp.dy - 0.2 * DEPTH, sp.w, 0, 0, sp.h, sp, WHITE);
     }
+    this.flush(this.atlas.tex, 2);
 
     const ev = ui.planEval;
     for (const [k, p] of ui.plans.map) {
@@ -775,6 +869,7 @@ export class GLRenderer {
 
   private shadows(world: World): void {
     const light = world.daylight;
+    this.statics.drawAO(this.cam, this.cssW, this.cssH);
     if (light <= 0.02) return;
     this.statics.drawShadows(this.cam, this.cssW, this.cssH, sunVector(world), rgba('rgb(40,28,14)', 0.26 * light));
   }
@@ -833,12 +928,15 @@ export class GLRenderer {
       let j = i;
       while (j < i1 && st.depth(j) < it.d) j++;
       if (j > i) {
-        this.flush(this.atlas.tex);
-        st.drawBuildings(i, j, cam, this.cssW, this.cssH, this.atlas.tex);
+        this.flush(this.atlas.tex, 1);
+        st.drawBuildings(i, j, cam, this.cssW, this.cssH, this.atlas.tex, this.atlas.ntex);
         i = j;
       }
       if (it.e) {
+        // Contact shadow goes in unlit (it only darkens the albedo).
+        this.flush(this.atlas.tex, 1);
         this.batch.push(it.x, it.y, 0, -0.17, -0.085, 0.34, 0, 0, 0.17, dot, shadowCol);
+        this.flush(this.atlas.tex, 0);
         const p = enemyPose(cam, it.x, it.y, it.e);
         const hq = Math.round(p.hop * MITE_HOP);
         const sq = Math.round(Math.abs(p.spin) * MITE_SPIN);
@@ -849,8 +947,8 @@ export class GLRenderer {
         this.building(it.x, it.y, it.t!, it.a, 0);
       }
     }
-    this.flush(this.atlas.tex);
-    st.drawBuildings(i, i1, cam, this.cssW, this.cssH, this.atlas.tex);
+    this.flush(this.atlas.tex, 1);
+    st.drawBuildings(i, i1, cam, this.cssW, this.cssH, this.atlas.tex, this.atlas.ntex);
 
     // Furnace smoke rises above everything around it.
     for (let n = i0; n < i1; n++) {
@@ -863,61 +961,100 @@ export class GLRenderer {
     }
   }
 
-  private lighting(world: World, alpha: number, v: View): void {
+  /** Full-screen lighting pass: G-buffer -> screen. */
+  private lighting(world: World, v: View): void {
     const gl = this.gl;
-    const cam = this.cam;
+    const gb = this.gb!;
     const light = world.daylight;
     const dark = 1 - light;
-    const white = this.sp(ID.white);
     const golden = light > 0 && light < 1 ? Math.sin(light * Math.PI) : 0;
-    if (golden > 0.01) {
-      this.screenQuad(0, 0, this.cssW, 0, 0, this.cssH, white, rgba('rgb(255,128,48)', 0.16 * golden));
-      this.flush(this.atlas.tex);
-    }
-    if (dark <= 0.01) return;
+    // Towards the sun: opposite to where shadows fall, higher when they're short.
+    const [sx, sy] = sunVector(world);
+    const l = Math.hypot(sx, sy, 1);
+    const sun = [-sx / l, -sy / l, 1 / l];
+    const warm = golden * 0.6;
+    const sunK = 0.55 * light;
+    const sunCol = [sunK, sunK * (1 - 0.3 * warm), sunK * (1 - 0.55 * warm)];
+    const amb = 0.7;
+    const ref = amb + 0.55 * 0.92;
 
-    const lights = lightSources(world, v);
-    const full = { u0: 0, v0: 0, u1: 1, v1: 1, dx: 0, dy: 0, w: 0, h: 0 };
-    const glow = (x: number, y: number, r: number, col: RGBA) => this.batch.push(x, y, 0, -r, -r * DEPTH, r * 2, 0, 0, r * 2 * DEPTH, full, col);
-
-    // 1) accumulate light into a half-res buffer
-    this.ensureLightFbo();
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.lightFbo);
-    gl.viewport(0, 0, this.lightW, this.lightH);
-    gl.clearColor(0, 0, 0, 0);
-    gl.clear(gl.COLOR_BUFFER_BIT);
-    gl.blendFunc(gl.ONE, gl.ONE);
-    for (const l of lights) glow(l.x, l.y, l.r, WHITE);
-    this.flush(this.glowTex);
-    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
-
-    // 2) darken what isn't lit
-    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-    gl.useProgram(this.darkProg);
+    gl.disable(gl.BLEND);
+    gl.useProgram(this.lightProg);
+    gl.activeTexture(gl.TEXTURE5);
+    gl.bindTexture(gl.TEXTURE_2D, gb.albedo);
+    gl.uniform1i(this.u.lu_albedo!, 5);
+    gl.activeTexture(gl.TEXTURE6);
+    gl.bindTexture(gl.TEXTURE_2D, gb.normal);
+    gl.uniform1i(this.u.lu_normal!, 6);
     gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.lightTex);
-    gl.uniform1i(this.u.dLight, 0);
-    const tint = parse('rgb(22,16,34)');
-    gl.uniform4f(this.u.dDark, tint[0], tint[1], tint[2], 0.74 * dark);
+    gl.uniform3f(this.u.lu_cam!, this.cam.ox, this.cam.oy, this.cam.scale);
+    gl.uniform2f(this.u.lu_res!, this.cssW, this.cssH);
+    gl.uniform1f(this.u.lu_dpr!, this.dpr);
+    gl.uniform3fv(this.u.lu_sun!, sun);
+    gl.uniform3fv(this.u.lu_sunCol!, sunCol);
+    gl.uniform1f(this.u.lu_amb!, amb);
+    gl.uniform1f(this.u.lu_ref!, ref);
+    gl.uniform1f(this.u.lu_dark!, dark);
+    gl.uniform1f(this.u.lu_golden!, golden);
+
+    let nl = 0;
+    if (dark > 0.01) {
+      const lights = lightSources(world, v);
+      // Nearest to the screen centre first.
+      const [cx, cy] = this.cam.toWorld(this.cssW / 2, this.cssH / 2);
+      lights.sort((a, b) => Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy));
+      const lp = new Float32Array(MAXL * 4);
+      const lc = new Float32Array(MAXL * 3);
+      for (const L of lights) {
+        if (nl >= MAXL) break;
+        const [z, col] = lightLook(L.b, L.on);
+        lp.set([L.x, L.y, z, L.r * 1.5], nl * 4);
+        lc.set(col, nl * 3);
+        nl++;
+      }
+      gl.uniform4fv(this.u.lu_lp!, lp);
+      gl.uniform3fv(this.u.lu_lc!, lc);
+    }
+    gl.uniform1i(this.u.lu_nl!, nl);
     gl.bindVertexArray(this.quadVao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-
-    // 3) coloured light, additive
-    gl.blendFunc(gl.ONE, gl.ONE);
-    for (const l of lights) if (l.color) glow(l.x, l.y, l.r * 0.8, rgba(l.color, dark));
-    this.flush(this.glowTex);
+    gl.enable(gl.BLEND);
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+  }
 
-    // 4) emissives through the dark: furnace mouths, mite eyes
-    const e = Math.min(1, dark * 1.3);
-    const hot = rgba(C.furnaceHot, e);
+  /** After lighting: soft glows (cheap bloom), furnace mouths and mite eyes through the dark. */
+  private emissive(world: World, alpha: number, v: View): void {
+    const gl = this.gl;
+    const cam = this.cam;
+    const dark = 1 - world.daylight;
+    const white = this.sp(ID.white);
+    // Furnace mouths glow at any hour (they're fire, not lit surfaces).
+    const hot = rgba(C.furnaceHot);
     for (const [k, t] of world.grid.tiles) {
       if (t.b !== Building.Furnace || t.cd <= 0 || !inView(k, v)) continue;
       const m = mouthRect(kx(k), ky(k), t.dir);
       if (m.top) this.batch.push(m.a, m.c, m.e, 0, 0, m.b - m.a, 0, 0, (m.d - m.c) * DEPTH, white, hot);
       else this.batch.push(m.a, m.c, m.e, 0, 0, m.b - m.a, 0, 0, (m.e - m.d) * RISE, white, hot);
     }
+    this.flush(this.atlas.tex);
+    if (dark <= 0.01) return;
+    const e = Math.min(1, dark * 1.3);
+    const full = { u0: 0, v0: 0, u1: 1, v1: 1, dx: 0, dy: 0, w: 0, h: 0 };
+    const halo = (x: number, y: number, z: number, r: number, col: RGBA) => this.batch.push(x, y, z, -r, -r, r * 2, 0, 0, r * 2, full, col);
+    gl.blendFunc(gl.ONE, gl.ONE);
+    for (const [k, t] of world.grid.tiles) {
+      if (!inView(k, v)) continue;
+      const x = kx(k) + 0.5;
+      const y = ky(k) + 0.5;
+      if (t.b === Building.Core) halo(x, y, 1.35, 0.75, rgba('rgb(111,224,192)', 0.35 * dark));
+      else if (t.b === Building.Furnace && t.cd > 0) {
+        const m = mouthRect(kx(k), ky(k), t.dir);
+        halo((m.a + m.b) / 2, m.c, m.top ? m.e : (m.d + m.e) / 2, 0.45, rgba('rgb(255,150,60)', 0.45 * dark));
+      }
+    }
+    this.flush(this.glowTex);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+
     const dot = this.sp(ID.dot);
     const eye = Math.max(1.5, cam.scale * 0.03) / cam.scale;
     const ec = rgba('#ffe066', e);
@@ -964,15 +1101,20 @@ export class GLRenderer {
 
   // ------------------------------------------------------------ plumbing
 
-  private flush(tex: WebGLTexture | null): void {
+  /** Draw the batch. nmode: 0 = don't touch normals, 1 = lit sprite (normal atlas), 2 = flat on the ground. */
+  private flush(tex: WebGLTexture | null, nmode = 0): void {
     const b = this.batch;
     if (b.n === 0) return;
     const gl = this.gl;
     const cam = this.cam;
     gl.useProgram(this.sprite);
-    gl.uniform2f(this.u.sRes, this.cssW, this.cssH);
-    gl.uniform3f(this.u.sCam, cam.ox, cam.oy, cam.scale);
-    gl.uniform1i(this.u.sTex, 0);
+    gl.uniform2f(this.u.su_res!, this.cssW, this.cssH);
+    gl.uniform3f(this.u.su_cam!, cam.ox, cam.oy, cam.scale);
+    gl.uniform1i(this.u.su_tex!, 0);
+    gl.uniform1i(this.u.su_nmode!, nmode);
+    gl.activeTexture(gl.TEXTURE4);
+    gl.bindTexture(gl.TEXTURE_2D, this.atlas.ntex);
+    gl.uniform1i(this.u.su_ntex!, 4);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.bindVertexArray(this.vao);
@@ -982,26 +1124,38 @@ export class GLRenderer {
     b.n = 0;
   }
 
-  private ensureLightFbo(): void {
+  private ensureGBuffer(): NonNullable<GLRenderer['gb']> {
     const gl = this.gl;
-    const w = Math.max(1, Math.round(gl.drawingBufferWidth / 2));
-    const h = Math.max(1, Math.round(gl.drawingBufferHeight / 2));
-    if (this.lightFbo && w === this.lightW && h === this.lightH) return;
-    if (this.lightTex) gl.deleteTexture(this.lightTex);
-    if (this.lightFbo) gl.deleteFramebuffer(this.lightFbo);
-    this.lightTex = gl.createTexture()!;
-    gl.bindTexture(gl.TEXTURE_2D, this.lightTex);
-    gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    this.lightFbo = gl.createFramebuffer()!;
-    gl.bindFramebuffer(gl.FRAMEBUFFER, this.lightFbo);
-    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.lightTex, 0);
+    const w = gl.drawingBufferWidth;
+    const h = gl.drawingBufferHeight;
+    if (this.gb && this.gb.w === w && this.gb.h === h) return this.gb;
+    if (this.gb) {
+      gl.deleteFramebuffer(this.gb.fbo);
+      gl.deleteTexture(this.gb.albedo);
+      gl.deleteTexture(this.gb.normal);
+      gl.deleteRenderbuffer(this.gb.ds);
+    }
+    const tex = () => {
+      const t = gl.createTexture()!;
+      gl.bindTexture(gl.TEXTURE_2D, t);
+      gl.texStorage2D(gl.TEXTURE_2D, 1, gl.RGBA8, w, h);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+      return t;
+    };
+    const albedo = tex();
+    const normal = tex();
+    const ds = gl.createRenderbuffer()!;
+    gl.bindRenderbuffer(gl.RENDERBUFFER, ds);
+    gl.renderbufferStorage(gl.RENDERBUFFER, gl.DEPTH24_STENCIL8, w, h);
+    const fbo = gl.createFramebuffer()!;
+    gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, albedo, 0);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT1, gl.TEXTURE_2D, normal, 0);
+    gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.DEPTH_STENCIL_ATTACHMENT, gl.RENDERBUFFER, ds);
     gl.bindFramebuffer(gl.FRAMEBUFFER, null);
-    this.lightW = w;
-    this.lightH = h;
+    this.gb = { fbo, albedo, normal, ds, w, h };
+    return this.gb;
   }
 
   private makeGlow(): WebGLTexture {
@@ -1031,6 +1185,20 @@ export class GLRenderer {
     this.terrain.dispose();
     this.atlas.dispose();
     this.next?.dispose();
+  }
+}
+
+/** Height and colour of a building's light. */
+function lightLook(b: Building, on: boolean): [number, number[]] {
+  switch (b) {
+    case Building.Core:
+      return [1.4, [0.75, 1.0, 0.9]];
+    case Building.Turret:
+      return [0.9, [1.0, 0.85, 0.62]];
+    case Building.Furnace:
+      return on ? [0.35, [1.0, 0.58, 0.26]] : [0.4, [0.5, 0.35, 0.22]];
+    default:
+      return [1.0, [0.9, 0.75, 0.5]];
   }
 }
 

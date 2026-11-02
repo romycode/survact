@@ -37,7 +37,9 @@ uniform highp usampler2D u_tiles;
 uniform vec3 u_cam;   // ox, oy, scale (CSS px)
 uniform vec2 u_res;   // CSS px
 uniform float u_dpr;
-out vec4 o;
+uniform float u_time;
+layout(location=0) out vec4 o;
+layout(location=1) out vec4 o_n;   // normal.xy, height (1 = water), 1
 
 const float DEPTH = ${DEPTH.toFixed(4)};
 const float BANKH = ${((BANK * RISE) / DEPTH).toFixed(4)};
@@ -107,6 +109,8 @@ void main() {
   bool water = g == 2u;
 
   col = ((t.x + t.y) & 1) == 1 ? LAND : LAND_ALT;
+  vec2 nrm = vec2(0.0);   // ground normal tilt (x east, y south)
+  float hgt = 0.0;
   float deco = smoothstep(18.0, 22.0, s);
 
   if (g == 0u && deco > 0.0) {
@@ -144,6 +148,10 @@ void main() {
 
   if (water) {
     col = WATER;
+    hgt = 1.0;
+    // Little moving waves for the sun to glint on.
+    float tt = u_time;
+    nrm = 0.16 * vec2(sin(w.x * 4.1 + tt * 1.3 + sin(w.y * 2.7 + tt * 0.7) * 1.5), cos(w.y * 5.3 - tt * 1.1 + sin(w.x * 3.1) * 1.2));
     if (hash2(t, 7) <= 0.3) {
       // Crest: quadratic (0.25,0.55) -(0.4,0.4)- (0.55,0.55) as 4 segments
       float d = 1e9;
@@ -159,7 +167,12 @@ void main() {
     bool n = groundOf(tileAt(t + ivec2(0, -1))) != 2u;
     bool wl = groundOf(tileAt(t + ivec2(-1, 0))) != 2u;
     bool e = groundOf(tileAt(t + ivec2(1, 0))) != 2u;
-    if (n) over(BANK_DARK, rect(f, vec2(-1.0, -1.0), vec2(2.0, BANKH)));
+    if (n) {
+      float bk = rect(f, vec2(-1.0, -1.0), vec2(2.0, BANKH));
+      over(BANK_DARK, bk);
+      nrm = mix(nrm, vec2(0.0, 0.9), bk);   // the bank's face looks south
+      hgt = mix(hgt, 0.0, bk);
+    }
     if (wl) over(BANK_C, rect(f, vec2(-1.0, -1.0), vec2(0.06, 2.0)));
     if (e) over(BANK_C, rect(f, vec2(0.94, -1.0), vec2(2.0, 2.0)));
     if (n) over(FOAM, rect(f, vec2(-1.0, BANKH), vec2(2.0, BANKH + 0.07)));
@@ -176,7 +189,9 @@ void main() {
         vec2 c = vec2(0.22 + hash2(t, 10 + k) * 0.56, 0.22 + hash2(t, 20 + k) * 0.56);
         float r = 0.09 + floor(hash2(t, 30 + k) * 4.0) * 0.025;
         float d = length(f - c) - r;
-        over(ORE, fill(d));
+        float inside = fill(d);
+        over(ORE, inside);
+        nrm = mix(nrm, clamp((f - c) / r, -1.0, 1.0) * 0.75, inside);   // round nuggets
         over(INK, stroke(d, 1.6));
         over(ORE_HI, fill(length(f - c + vec2(r * 0.3)) - r * 0.38));
       }
@@ -193,6 +208,7 @@ void main() {
   }
 
   o = vec4(col, 1.0);
+  o_n = vec4(nrm * 0.5 + 0.5, hgt, 1.0);
 }`;
 
 function compile(gl: WebGL2RenderingContext, vs: string, fs: string): WebGLProgram {
@@ -219,7 +235,7 @@ interface Rect {
 export class GLTerrain {
   private readonly gl: WebGL2RenderingContext;
   private readonly prog: WebGLProgram;
-  private readonly u: Record<'tiles' | 'cam' | 'res' | 'dpr', WebGLUniformLocation>;
+  private readonly u: Record<'tiles' | 'cam' | 'res' | 'dpr' | 'time', WebGLUniformLocation>;
   private readonly tex: WebGLTexture;
   private readonly data = new Uint8Array(N * N);
   private rect: Rect | null = null;
@@ -237,6 +253,7 @@ export class GLTerrain {
       cam: gl.getUniformLocation(this.prog, 'u_cam')!,
       res: gl.getUniformLocation(this.prog, 'u_res')!,
       dpr: gl.getUniformLocation(this.prog, 'u_dpr')!,
+      time: gl.getUniformLocation(this.prog, 'u_time')!,
     };
     this.tex = gl.createTexture()!;
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
@@ -307,7 +324,7 @@ export class GLTerrain {
     }
   }
 
-  draw(world: World, cam: Camera, quadVao: WebGLVertexArrayObject, dpr: number, cssW: number, cssH: number): void {
+  draw(world: World, cam: Camera, quadVao: WebGLVertexArrayObject, dpr: number, cssW: number, cssH: number, time: number): void {
     const gl = this.gl;
     this.sync(world, cam);
     gl.disable(gl.BLEND);
@@ -318,6 +335,7 @@ export class GLTerrain {
     gl.uniform3f(this.u.cam, cam.ox, cam.oy, cam.scale);
     gl.uniform2f(this.u.res, cssW, cssH);
     gl.uniform1f(this.u.dpr, dpr);
+    gl.uniform1f(this.u.time, time);
     gl.bindVertexArray(quadVao);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     gl.activeTexture(gl.TEXTURE0);
