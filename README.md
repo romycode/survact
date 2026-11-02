@@ -53,7 +53,8 @@ src/
   input.ts           punteros: tap / línea en L / pan / pinch, sobre planos
   plans.ts           planos fantasma: validez, coste acumulado, commit a comandos
   inspector.ts       ficha del edificio: HTML-in-Canvas o overlay con anchor positioning
-  render.ts          suelo con transform afín + prismas por profundidad, sombras y luces de noche
+  render.ts          overlays de suelo, edificios (sprites cacheados) por profundidad, sombras y luces
+  terrainLayer.ts    terreno estático pintado por chunks 8×8 en bitmaps (caché LRU)
   sim/               simulación pura: sin DOM ni reloj
     world.ts         estado, cuenta atrás de oleadas, apply(cmd), tick(), economía, spawns
     grid.ts          grid infinito disperso (Map por key empaquetada)
@@ -68,4 +69,15 @@ Reglas que hay que mantener:
 - `sim/` no importa nada del DOM. Se puede ejecutar headless en Node para tests y benchmarks.
 - El mundo solo cambia por `apply(cmd)` o `tick()`. Con la seed y el log de comandos se reproduce una partida.
 - El render no muta estado.
-- `globalThis.__survact` expone `world`, `cam` y `ui` para depurar desde la consola.
+- `globalThis.__survact` expone `world`, `cam` y `ui` para depurar desde la consola; `__survact.benchRender(n)` da ms/frame y el desglose por fase.
+
+## Rendimiento
+
+El render no repinta lo que no cambia:
+
+- **Terreno** (césped, flores, agua, orillas, vetas, rejilla): se pinta una vez por chunk de 8×8 en un bitmap (`ImageBitmap`, subido a GPU una sola vez) y cada frame es un `drawImage` por chunk. En reposo se pinta al zoom exacto y se copia 1:1 en píxeles enteros; mientras haces zoom se reutiliza escalado y se repinta al soltar (máx. 6 chunks/frame). Las vetas se repintan solo cuando cambia su aspecto (nº de pepitas o agotada). Memoria acotada a ~3 pantallas (LRU).
+- **Edificios**: sprite por (tipo, orientación, estado, zoom) — la torreta con 16 ángulos de cañón. Solo el núcleo (gema animada) y el humo del horno se dibujan en vivo.
+- **Noche**: máscara de oscuridad a media resolución y halos de luz como sprite precalculado.
+- **Sombras**: hexágono analítico por edificio en un único path (antes, envolvente convexa por edificio y frame).
+
+Medido con 676 edificios, 60 enemigos, CPU ×4 más lenta, pantalla de móvil a 3× (Chrome headless con canvas acelerado): de 94–226 ms/frame a 17–26 ms/frame.

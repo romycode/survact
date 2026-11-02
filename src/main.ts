@@ -3,7 +3,7 @@ import { Hud, TOOL_KEYS } from './hud';
 import { Inspector } from './inspector';
 import { attachInput } from './input';
 import { Plans } from './plans';
-import { NO_HOVER, render, type UiState } from './render';
+import { NO_HOVER, prof, render, terrainCache, type UiState } from './render';
 import { BUILDINGS } from './sim/defs';
 import { key } from './sim/grid';
 import { DT, World, type Command } from './sim/world';
@@ -197,4 +197,16 @@ requestAnimationFrame(frame);
   cam,
   ui,
   inspector,
+  /** Average ms per render() over n frames, for profiling. */
+  benchRender(n = 60): { total: number; phases: Record<string, number>; chunks: unknown } {
+    prof.on = true;
+    prof.ms = {};
+    const t0 = performance.now();
+    for (let i = 0; i < n; i++) render(ctx, world, cam, ui, 0, dpr, cssW, cssH);
+    const total = (performance.now() - t0) / n;
+    prof.on = false;
+    const phases: Record<string, number> = {};
+    for (const [k, v] of Object.entries(prof.ms)) phases[k] = Math.round((v / n) * 100) / 100;
+    return { total: Math.round(total * 100) / 100, phases, chunks: terrainCache.stats };
+  },
 };

@@ -10,8 +10,10 @@
 import { Camera } from './camera';
 import { BELT_TICKS, BUILDINGS, Building, DAY, isBelt, DIR_X, DIR_Y, Item, MAP, TURRET, type Placeable } from './sim/defs';
 import { NO_NEXT } from './sim/flowfield';
+import { TerrainCache, paintTerrain } from './terrainLayer';
+
+export const terrainCache = new TerrainCache();
 import { key, kx, ky, type Tile } from './sim/grid';
-import { Ground } from './sim/terrain';
 import type { Enemy, World } from './sim/world';
 import type { PlanEval, Plans } from './plans';
 
@@ -119,16 +121,33 @@ export function render(
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, 0, cssW, cssH);
 
+  const P = prof.on ? (name: string, t0: number) => (prof.ms[name] = (prof.ms[name] ?? 0) + performance.now() - t0) : null;
+  let t = performance.now();
+  const cached = terrainCache.draw(ctx, world, cam, dpr, cssW, cssH);
   cam.applyGround(ctx, dpr);
+  if (!cached) paintTerrain(ctx, world, v.x0, v.y0, v.x1, v.y1, cam.scale);
+  P?.('terrain', t);
+  t = performance.now();
   drawGround(ctx, world, cam, ui, v);
+  P?.('groundOverlays', t);
 
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  drawBanks(ctx, world, cam, v);
+  t = performance.now();
   drawShadows(ctx, world, cam, v);
-  drawRaised(ctx, world, cam, ui, alpha, v);
+  P?.('shadows', t);
+  t = performance.now();
+  drawRaised(ctx, world, cam, ui, alpha, v, dpr);
+  P?.('raised', t);
+  t = performance.now();
   drawLighting(ctx, world, cam, alpha, dpr, cssW, cssH, v);
+  P?.('lighting', t);
+  t = performance.now();
   drawShotsAndBars(ctx, world, cam, alpha, v);
+  P?.('bars', t);
 }
+
+/** Opt-in per-phase timings (debug handle: __survact.prof). */
+export const prof = { on: false, ms: {} as Record<string, number> };
 
 // =====================================================================
 // Ground pass (tile units)
@@ -138,136 +157,17 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
   const { grid, terrain } = world;
   const gpx = 2 / cam.scale; // ~1 CSS px in ground units
 
-  // Grass with a soft checker so the iso grid reads without lines.
-  for (let y = v.y0; y <= v.y1; y++) {
-    for (let x = v.x0; x <= v.x1; x++) {
-      if (terrain.at(x, y) === Ground.Water) continue;
-      ctx.fillStyle = (x + y) & 1 ? C.land : C.landAlt;
-      ctx.fillRect(x, y, 1.01, 1.01);
-    }
-  }
-  // Decorations: grass tufts and little flowers, fixed per tile (pure hash).
-  if (cam.scale >= 20) {
-    ctx.lineCap = 'round';
-    ctx.lineWidth = 2.2 * gpx;
-    ctx.strokeStyle = C.tuft;
-    ctx.beginPath();
-    const flowers: [number, number, string][] = [];
-    for (let y = v.y0; y <= v.y1; y++) {
-      for (let x = v.x0; x <= v.x1; x++) {
-        if (terrain.at(x, y) !== Ground.Land || grid.tiles.has(key(x, y))) continue;
-        const h = ((x * 374761393) ^ (y * 668265263)) >>> 0;
-        const r = (h & 1023) / 1023;
-        if (r > 0.3) continue;
-        const ox = 0.2 + (((h >> 10) & 255) / 255) * 0.6;
-        const oy = 0.2 + (((h >> 18) & 255) / 255) * 0.6;
-        if (r < 0.06) {
-          flowers.push([x + ox, y + oy, r < 0.03 ? C.flowerA : C.flowerB]);
-        } else {
-          // three blades, drawn "up" in screen space = towards -x,-y on the ground
-          for (const [dx, dy] of [[-0.09, 0.02], [0, 0], [0.02, -0.09]]) {
-            ctx.moveTo(x + ox + dx, y + oy + dy);
-            ctx.lineTo(x + ox + dx - 0.1, y + oy + dy - 0.1);
-          }
-        }
-      }
-    }
-    ctx.stroke();
-    ctx.lineCap = 'butt';
-    for (const [fx, fy, col] of flowers) {
-      ctx.fillStyle = col;
-      ctx.beginPath();
-      ctx.arc(fx, fy, 0.07, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = '#ff9f43';
-      ctx.beginPath();
-      ctx.arc(fx, fy, 0.03, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  if (world.phase !== 'lost') {
+  // Build reach: only while a build tool is in hand (it's for placing).
+  if (world.phase !== 'lost' && ui.tool !== 'select') {
     const reach = reachSet(world);
     ctx.fillStyle = C.reachTint;
+    ctx.beginPath();
     for (let y = v.y0; y <= v.y1; y++) {
       for (let x = v.x0; x <= v.x1; x++) {
-        if (reach.has(key(x, y)) && terrain.at(x, y) !== Ground.Water) ctx.fillRect(x, y, 1.01, 1.01);
+        if (reach.has(key(x, y)) && !terrain.water(x, y)) ctx.rect(x, y, 1.01, 1.01);
       }
     }
-  }
-
-  // Water sits lower: drawn here, then land banks in front of it in pass 2.
-  const shimmer = world.tickCount / 40;
-  for (let y = v.y0; y <= v.y1; y++) {
-    for (let x = v.x0; x <= v.x1; x++) {
-      if (terrain.at(x, y) !== Ground.Water) continue;
-      ctx.fillStyle = C.water;
-      ctx.fillRect(x, y, 1.01, 1.01);
-      // little wave crest
-      const ph = Math.sin(x * 0.9 + y * 0.6 + shimmer);
-      if (ph > 0.55) {
-        ctx.strokeStyle = C.waterLight;
-        ctx.lineWidth = 2.5 * gpx;
-        ctx.lineCap = 'round';
-        ctx.beginPath();
-        ctx.moveTo(x + 0.25, y + 0.55);
-        ctx.quadraticCurveTo(x + 0.4, y + 0.4, x + 0.55, y + 0.55);
-        ctx.stroke();
-        ctx.lineCap = 'butt';
-      }
-    }
-  }
-  // Foam where water meets land
-  ctx.fillStyle = C.foam;
-  for (let y = v.y0; y <= v.y1; y++) {
-    for (let x = v.x0; x <= v.x1; x++) {
-      if (terrain.at(x, y) !== Ground.Water) continue;
-      const f = 0.1;
-      if (terrain.at(x - 1, y) !== Ground.Water) ctx.fillRect(x, y, f, 1);
-      if (terrain.at(x, y - 1) !== Ground.Water) ctx.fillRect(x, y, 1, f);
-    }
-  }
-
-  // Iron ore: dirt patch with outlined nuggets (more nuggets = richer)
-  for (let y = v.y0; y <= v.y1; y++) {
-    for (let x = v.x0; x <= v.x1; x++) {
-      const left = world.oreLeft(x, y);
-      if (left === 0) continue;
-      ctx.fillStyle = C.oreGround;
-      ctx.fillRect(x, y, 1.01, 1.01);
-      const n = 1 + Math.min(4, Math.round(left / 200));
-      for (let k = 0; k < n; k++) {
-        const h = ((x * 73856093) ^ (y * 19349663) ^ (k * 83492791)) >>> 0;
-        const ox = 0.22 + ((h & 255) / 255) * 0.56;
-        const oy = 0.22 + (((h >> 8) & 255) / 255) * 0.56;
-        const r = 0.09 + ((h >> 16) & 3) * 0.025;
-        ctx.fillStyle = C.ore;
-        ctx.strokeStyle = C.ink;
-        ctx.lineWidth = 1.6 * gpx;
-        ctx.beginPath();
-        ctx.arc(x + ox, y + oy, r, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-        ctx.fillStyle = C.oreHi;
-        ctx.beginPath();
-        ctx.arc(x + ox - r * 0.3, y + oy - r * 0.3, r * 0.38, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
-  }
-
-  if (cam.scale >= 28) {
-    ctx.strokeStyle = C.grid;
-    ctx.lineWidth = gpx;
-    ctx.beginPath();
-    for (let x = v.x0; x <= v.x1 + 1; x++) {
-      ctx.moveTo(x, v.y0);
-      ctx.lineTo(x, v.y1 + 1);
-    }
-    for (let y = v.y0; y <= v.y1 + 1; y++) {
-      ctx.moveTo(v.x0, y);
-      ctx.lineTo(v.x1 + 1, y);
-    }
-    ctx.stroke();
+    ctx.fill();
   }
 
   // Predicted routes + spawn markers
@@ -437,36 +337,111 @@ function arrowPoints(cx: number, cy: number, d: number, size: number): [number, 
 // Screen pass (projected)
 // =====================================================================
 
-const BANK = 0.28; // how far water sits below land
+type Drawable = { depth: number; draw: () => void };
 
-/** Land/water edges facing the viewer (+x and +y) get a visible earth wall. */
-function drawBanks(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v: View): void {
-  const { terrain } = world;
-  for (let y = v.y0; y <= v.y1; y++) {
-    for (let x = v.x0; x <= v.x1; x++) {
-      if (terrain.at(x, y) === Ground.Water) continue;
-      if (terrain.at(x, y + 1) === Ground.Water) {
-        quad(ctx, cam, [[x, y + 1, 0], [x + 1, y + 1, 0], [x + 1, y + 1, -BANK], [x, y + 1, -BANK]], C.bankDark, false);
-      }
-      if (terrain.at(x + 1, y) === Ground.Water) {
-        quad(ctx, cam, [[x + 1, y, 0], [x + 1, y + 1, 0], [x + 1, y + 1, -BANK], [x + 1, y, -BANK]], C.bank, false);
-      }
+// ---------------- building sprites ----------------
+// Buildings are drawn once per (type, facing, state, zoom) into a bitmap and
+// blitted, instead of re-tracing 5–15 outlined polygons each per frame.
+// Only the core (animated gem) and furnace smoke are drawn live.
+
+const AIM_STEPS = 16;
+const SPRITE_TOP = 1.7; // tallest silhouette, in tile heights
+const SPRITE_SETTLE = 6;
+
+interface Sprite {
+  img: CanvasImageSource;
+  w: number;
+  h: number;
+  /** Device px of the tile's top vertex inside the sprite. */
+  ax: number;
+  ay: number;
+}
+
+const sprites = {
+  map: new Map<string, Sprite>(),
+  scale: 0,
+  last: 0,
+  still: 0,
+  /** Track zoom; switch sprite resolution once the zoom has settled. */
+  tick(dev: number): void {
+    this.still = dev === this.last ? this.still + 1 : 0;
+    this.last = dev;
+    if (this.scale === 0 || (this.still >= SPRITE_SETTLE && dev !== this.scale)) {
+      for (const sp of this.map.values()) if ('close' in sp.img) (sp.img as ImageBitmap).close();
+      this.map.clear();
+      this.scale = dev;
+    }
+  },
+  get(t: Tile, aim: number | undefined, variant: string): Sprite {
+    const S = this.scale;
+    const id = `${t.b}|${t.dir}|${variant}`;
+    let sp = this.map.get(id);
+    if (sp) return sp;
+    const pad = Math.ceil(S * 0.2);
+    const w = Math.ceil(S + 2 * pad);
+    const h = Math.ceil(S / 2 + (SPRITE_TOP * S) / 2 + 2 * pad);
+    const ax = pad + S / 2;
+    const ay = pad + (SPRITE_TOP * S) / 2;
+    const canvas: HTMLCanvasElement | OffscreenCanvas =
+      typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(w, h) : Object.assign(document.createElement('canvas'), { width: w, height: h });
+    const g = canvas.getContext('2d') as CanvasRenderingContext2D;
+    // A camera whose (0,0,0) lands on (ax, ay), in device px.
+    const sc = new Camera();
+    sc.resize(w, h);
+    sc.scale = S;
+    const c0 = ((h / 2 - ay) * 2) / S;
+    sc.centerOn(c0, c0);
+    drawBuilding(g, sc, 0, 0, t, 0, aim, false);
+    const img: CanvasImageSource = canvas instanceof HTMLCanvasElement ? canvas : canvas.transferToImageBitmap();
+    sp = { img, w, h, ax, ay };
+    this.map.set(id, sp);
+    return sp;
+  },
+};
+
+function blitBuilding(ctx: CanvasRenderingContext2D, cam: Camera, dpr: number, x: number, y: number, t: Tile, time: number): void {
+  if (t.b === Building.Core) {
+    drawBuilding(ctx, cam, x, y, t, time);
+    return;
+  }
+  let aim: number | undefined;
+  let variant = '';
+  if (t.b === Building.Turret) {
+    const a = turretAim.get(key(x, y)) ?? Math.PI / 4;
+    const q = Math.round((a / (Math.PI * 2)) * AIM_STEPS) % AIM_STEPS;
+    aim = (q / AIM_STEPS) * Math.PI * 2;
+    variant = `${q}${t.ammo === 0 ? 'e' : ''}`;
+  } else if (t.b === Building.Furnace || t.b === Building.Miner) {
+    variant = t.cd > 0 ? 'on' : 'off';
+  }
+  const sp = sprites.get(t, aim, variant);
+  const k = cam.scale * dpr / sprites.scale / dpr; // sprite device px -> CSS px
+  const [tx, ty] = cam.project(x, y, 0);
+  ctx.drawImage(sp.img, tx - sp.ax * k, ty - sp.ay * k, sp.w * k, sp.h * k);
+  // Live effects on top of the baked body.
+  if (t.b === Building.Furnace && t.cd > 0) {
+    for (let i = 0; i < 3; i++) {
+      const ph = (time / 50 + i / 3) % 1;
+      const [sx, sy] = cam.project(x + 0.25 - ph * 0.15, y + 0.25 - ph * 0.15, 1.2 + ph * 0.7);
+      ctx.fillStyle = `rgba(160,160,170,${(0.45 * (1 - ph)).toFixed(3)})`;
+      ctx.beginPath();
+      ctx.arc(sx, sy, cam.scale * (0.05 + 0.07 * ph), 0, Math.PI * 2);
+      ctx.fill();
     }
   }
 }
 
-type Drawable = { depth: number; draw: () => void };
-
-function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui: UiState, alpha: number, v: View): void {
+function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui: UiState, alpha: number, v: View, dpr: number): void {
   for (const sh of world.shots) {
     turretAim.set(key(Math.floor(sh.fromX), Math.floor(sh.fromY)), Math.atan2(sh.toY - sh.fromY, sh.toX - sh.fromX));
   }
+  sprites.tick(cam.scale * dpr);
   const list: Drawable[] = [];
   for (const [k, t] of world.grid.tiles) {
     if (isBelt(t.b) || !inView(k, v)) continue;
     const x = kx(k);
     const y = ky(k);
-    list.push({ depth: x + y + 1, draw: () => drawBuilding(ctx, cam, x, y, t, world.tickCount) });
+    list.push({ depth: x + y + 1, draw: () => blitBuilding(ctx, cam, dpr, x, y, t, world.tickCount) });
   }
   for (const e of world.enemies) {
     const ex = lerp(e.prevX, e.x, alpha);
@@ -483,7 +458,7 @@ function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
       depth: x + y + 1,
       draw: () => {
         ctx.globalAlpha = ok ? 0.45 : 0.25;
-        drawBuilding(ctx, cam, x, y, ghost);
+        blitBuilding(ctx, cam, dpr, x, y, ghost, 0);
         ctx.globalAlpha = 1;
       },
     });
@@ -504,7 +479,16 @@ export const HEIGHT: Partial<Record<Building, number>> = {
 /** Last aim angle per turret (render-side only, from the shots it fired). */
 const turretAim = new Map<number, number>();
 
-function drawBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, t: Tile, time = 0): void {
+function drawBuilding(
+  ctx: CanvasRenderingContext2D,
+  cam: Camera,
+  x: number,
+  y: number,
+  t: Tile,
+  time = 0,
+  aimOverride?: number,
+  fx = true,
+): void {
   const cx = x + 0.5;
   const cy = y + 0.5;
   switch (t.b) {
@@ -562,7 +546,7 @@ function drawBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: 
       prism(ctx, cam, x + 0.14, y + 0.14, x + 0.36, y + 0.36, 0.55, 1.15, '#b8473a');
       furnaceMouth(ctx, cam, x, y, t, t.cd > 0 ? C.furnaceHot : '#2a1006');
       raisedArrow(ctx, cam, cx + 0.12, cy + 0.12, 0.55, t.dir, 0.16, '#3b1607');
-      if (t.cd > 0) {
+      if (fx && t.cd > 0) {
         // Smoke puffs
         for (let i = 0; i < 3; i++) {
           const ph = (time / 50 + i / 3) % 1;
@@ -578,7 +562,7 @@ function drawBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: 
     case Building.Turret: {
       // Round base, rotating head, barrel towards the last target.
       cylinder(ctx, cam, cx, cy, 0, 0.24, 0.38, C.turretBase);
-      const aim = turretAim.get(key(x, y)) ?? Math.PI / 4;
+      const aim = aimOverride ?? turretAim.get(key(x, y)) ?? Math.PI / 4;
       const empty = t.ammo === 0;
       const head = empty ? '#cdb98a' : C.turret;
       const bx = cx + Math.cos(aim) * 0.48;
@@ -909,16 +893,16 @@ function drawShadows(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v
     const h = HEIGHT[tile.b] ?? 0.5;
     const x = kx(k);
     const y = ky(k);
-    const c: [number, number][] = [
-      [x + 0.08, y + 0.08],
-      [x + 0.92, y + 0.08],
-      [x + 0.92, y + 0.92],
-      [x + 0.08, y + 0.92],
-    ];
-    const pts = [...c, ...c.map(([a, b]) => [a + sx * h, b + sy * h] as [number, number])];
-    const hull = convexHull(pts);
-    hull.forEach(([a, b], i) => {
-      const [px, py] = cam.project(a, b, 0);
+    // Square footprint swept along (sx, sy), both ≥ 0: its hull is this hexagon.
+    const a = x + 0.08;
+    const b = x + 0.92;
+    const c = y + 0.08;
+    const d = y + 0.92;
+    const u = sx * h;
+    const w = sy * h;
+    const hex: [number, number][] = [[a, c], [b, c], [b + u, c + w], [b + u, d + w], [a + u, d + w], [a, d]];
+    hex.forEach(([px0, py0], i) => {
+      const [px, py] = cam.project(px0, py0, 0);
       if (i === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
     });
@@ -955,15 +939,17 @@ function drawLighting(
   }
   if (dark <= 0.01) return;
 
-  const W = Math.round(cssW * dpr);
-  const H = Math.round(cssH * dpr);
+  // Half-res mask: it's all soft gradients, so it upscales invisibly at 1/4 the fill cost.
+  const ms = dpr * 0.5;
+  const W = Math.round(cssW * ms);
+  const H = Math.round(cssH * ms);
   if (!darkCanvas || darkCanvas.width !== W || darkCanvas.height !== H) {
     darkCanvas = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(W, H) : document.createElement('canvas');
     darkCanvas.width = W;
     darkCanvas.height = H;
   }
   const dctx = darkCanvas.getContext('2d') as CanvasRenderingContext2D;
-  dctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  dctx.setTransform(ms, 0, 0, ms, 0, 0);
   dctx.globalCompositeOperation = 'source-over';
   dctx.clearRect(0, 0, cssW, cssH);
   dctx.fillStyle = `rgba(24,22,70,${(0.72 * dark).toFixed(3)})`;
@@ -971,8 +957,9 @@ function drawLighting(
 
   const lights: { x: number; y: number; r: number; color: string | null }[] = [];
   const flicker = 0.92 + 0.08 * Math.sin(world.tickCount * 0.7);
+  const lv: View = { x0: v.x0 - 5, y0: v.y0 - 5, x1: v.x1 + 5, y1: v.y1 + 5 };
   for (const [k, t] of world.grid.tiles) {
-    if (!inView(k, { x0: v.x0 - 5, y0: v.y0 - 5, x1: v.x1 + 5, y1: v.y1 + 5 })) continue;
+    if (!inView(k, lv)) continue;
     const x = kx(k) + 0.5;
     const y = ky(k) + 0.5;
     switch (t.b) {
@@ -995,7 +982,7 @@ function drawLighting(
   for (const l of lights) isoGlow(dctx, cam, l.x, l.y, l.r, 'rgba(0,0,0,1)');
   ctx.save();
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.drawImage(darkCanvas as CanvasImageSource, 0, 0);
+  ctx.drawImage(darkCanvas as CanvasImageSource, 0, 0, Math.round(cssW * dpr), Math.round(cssH * dpr));
   ctx.restore();
 
   // Coloured light on top (additive), scaled by darkness.
@@ -1026,6 +1013,27 @@ function drawLighting(
   ctx.restore();
 }
 
+const glowSprites = new Map<string, HTMLCanvasElement | OffscreenCanvas>();
+/** 128px radial falloff in one colour, built once per colour. */
+function glowSprite(color: string): HTMLCanvasElement | OffscreenCanvas {
+  let c = glowSprites.get(color);
+  if (!c) {
+    const n = 128;
+    c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(n, n) : document.createElement('canvas');
+    c.width = n;
+    c.height = n;
+    const g = c.getContext('2d') as CanvasRenderingContext2D;
+    const grad = g.createRadialGradient(n / 2, n / 2, 0, n / 2, n / 2, n / 2);
+    grad.addColorStop(0, color);
+    grad.addColorStop(0.55, color);
+    grad.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = grad;
+    g.fillRect(0, 0, n, n);
+    glowSprites.set(color, c);
+  }
+  return c;
+}
+
 /** Radial falloff on the ground plane (an ellipse in iso), radius r in tiles. */
 function isoGlow(
   c: CanvasRenderingContext2D,
@@ -1037,38 +1045,9 @@ function isoGlow(
 ): void {
   const [sx, sy] = cam.project(x, y, 0);
   const rx = r * cam.scale * 0.707;
-  c.save();
-  c.translate(sx, sy);
-  c.scale(1, 0.5);
-  const g = c.createRadialGradient(0, 0, 0, 0, 0, rx);
-  g.addColorStop(0, color);
-  g.addColorStop(0.55, color);
-  g.addColorStop(1, 'rgba(0,0,0,0)');
-  c.fillStyle = g;
-  c.beginPath();
-  c.arc(0, 0, rx, 0, Math.PI * 2);
-  c.fill();
-  c.restore();
+  c.drawImage(glowSprite(color) as CanvasImageSource, sx - rx, sy - rx / 2, rx * 2, rx);
 }
 
-/** Andrew's monotone chain. */
-function convexHull(points: [number, number][]): [number, number][] {
-  const p = [...points].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const cross = (o: [number, number], a: [number, number], b: [number, number]) =>
-    (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
-  const lower: [number, number][] = [];
-  for (const q of p) {
-    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], q) <= 0) lower.pop();
-    lower.push(q);
-  }
-  const upper: [number, number][] = [];
-  for (let i = p.length - 1; i >= 0; i--) {
-    const q = p[i];
-    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], q) <= 0) upper.pop();
-    upper.push(q);
-  }
-  return lower.slice(0, -1).concat(upper.slice(0, -1));
-}
 
 // =====================================================================
 // Toolbar icons: the same renderer, one tile, so buttons look like the thing
