@@ -205,7 +205,7 @@ function drawFrame(alpha: number): void {
 const fpsEl = params.has('fps') ? Object.assign(document.createElement('div'), { className: 'fps' }) : null;
 if (fpsEl) {
   fpsEl.style.cssText =
-    'position:fixed;left:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:99;font:600 12px/1.2 ui-monospace,monospace;color:#ffe3a0;background:rgba(42,29,20,.85);padding:4px 6px;border-radius:6px;pointer-events:none';
+    'position:fixed;left:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:99;font:600 12px/1.2 ui-monospace,monospace;color:#ffe3a0;background:rgba(42,29,20,.85);padding:4px 6px;border-radius:2px;pointer-events:none';
   document.body.append(fpsEl);
 }
 let fpsFrames = 0;

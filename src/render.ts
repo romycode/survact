@@ -1094,11 +1094,11 @@ function raisedArrow(
 function bar(ctx: CanvasRenderingContext2D, x: number, y: number, w: number, h: number, f: number, color: string): void {
   ctx.fillStyle = C.hpBg;
   ctx.beginPath();
-  ctx.roundRect(x - 1, y - 1, w + 2, h + 2, (h + 2) / 2);
+  ctx.rect(x - 1, y - 1, w + 2, h + 2);
   ctx.fill();
   ctx.fillStyle = color;
   ctx.beginPath();
-  ctx.roundRect(x, y, Math.max(h, w * Math.max(0, Math.min(1, f))), h, h / 2);
+  ctx.rect(x, y, Math.max(h, w * Math.max(0, Math.min(1, f))), h);
   ctx.fill();
 }
 

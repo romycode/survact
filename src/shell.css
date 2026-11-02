@@ -26,7 +26,7 @@
   --ui: 'Fredoka', 'Baloo 2', ui-rounded, 'SF Pro Rounded', system-ui, sans-serif;
   --num: 'Fredoka', ui-rounded, system-ui, sans-serif;
   --display: 'Alfa Slab One', 'Rockwell', 'Roboto Slab', Georgia, serif;
-  --r: 14px;
+  --r: 4px;
   --tap: 50px;
   --b: 2.5px solid var(--ink);
   --pop: 0 3px 0 var(--ink);
@@ -89,9 +89,9 @@ button:focus-visible { outline: 3px solid var(--core); outline-offset: 2px; }
 .chips.end { justify-content: flex-end; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 11px 0 7px;
-  border-radius: 999px; font: 600 15px/1 var(--num); font-variant-numeric: tabular-nums;
+  border-radius: var(--r); font: 600 15px/1 var(--num); font-variant-numeric: tabular-nums;
 }
-.chip .dot { width: 18px; height: 18px; border-radius: 50%; display: block; border: 2px solid var(--ink); box-sizing: border-box; }
+.chip .dot { width: 18px; height: 18px; border-radius: 2px; display: block; border: 2px solid var(--ink); box-sizing: border-box; }
 .chip b { color: var(--brass-hi); }
 .dot.iron { background: radial-gradient(circle at 35% 35%, #b4683e 0 30%, #56545c 32%); border-radius: 30%; }
 .dot.plate { background: var(--plate); border-radius: 3px; }
@@ -100,7 +100,7 @@ button:focus-visible { outline: 3px solid var(--core); outline-offset: 2px; }
 @keyframes flash { from { background: #ffd2d8; } }
 .chip.core { padding-left: 8px; }
 .chip.core svg { width: 18px; height: 18px; fill: var(--core); stroke: var(--ink); stroke-width: 1.6; stroke-linejoin: round; }
-.meter { width: 58px; height: 10px; border-radius: 6px; background: var(--paper-2); border: 2px solid var(--ink); overflow: hidden; box-sizing: border-box; }
+.meter { width: 58px; height: 10px; border-radius: 1px; background: var(--paper-2); border: 2px solid var(--ink); overflow: hidden; box-sizing: border-box; }
 .meter i { display: block; height: 100%; width: 100%; background: var(--core); transition: width .2s; }
 .chip.core[data-low="true"] .meter i { background: var(--danger); }
 .chip.clock { padding: 0 11px; color: var(--ink); background: var(--brass-bg); box-shadow: inset 0 1px 0 #fff6, var(--pop); }
@@ -113,7 +113,7 @@ button:focus-visible { outline: 3px solid var(--core); outline-offset: 2px; }
 .chip.wave[data-active="true"] .wave-text b { color: #ff8a6e; }
 .wave-bar { display: none; }
 .call {
-  height: 30px; padding: 0 12px; border-radius: 999px; border: var(--b); box-shadow: 0 2px 0 var(--ink);
+  height: 30px; padding: 0 12px; border-radius: 3px; border: var(--b); box-shadow: 0 2px 0 var(--ink);
   background: linear-gradient(180deg, #f0685a, var(--danger) 60%, #a82a1e); color: #fff;
   font: 400 12px/1 var(--display); letter-spacing: .04em; cursor: pointer;
 }
@@ -137,7 +137,7 @@ button:focus-visible { outline: 3px solid var(--core); outline-offset: 2px; }
 .ctx-info b { font: 400 15px/1.1 var(--display); letter-spacing: .02em; color: var(--brass-hi); }
 .ctx-info span { color: var(--fg); opacity: .8; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ctx-btn {
-  height: 42px; padding: 0 12px; border-radius: 12px;
+  height: 42px; padding: 0 12px; border-radius: 3px;
   display: inline-flex; align-items: center; gap: 6px; cursor: pointer; font-weight: 600;
 }
 .ctx-btn .arrow { font-size: 20px; color: var(--ink); line-height: 1; }
@@ -153,11 +153,11 @@ button:focus-visible { outline: 3px solid var(--core); outline-offset: 2px; }
 
 .hotbar {
   display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px;
-  width: min(100%, 520px); box-sizing: border-box; padding: 8px 10px; border-radius: 18px;
+  width: min(100%, 520px); box-sizing: border-box; padding: 8px 10px; border-radius: var(--r);
   box-shadow: var(--frame), 0 4px 0 var(--ink);
 }
 .slot {
-  position: relative; min-width: 0; height: 76px; padding: 2px 0 6px; border-radius: 13px;
+  position: relative; min-width: 0; height: 76px; padding: 2px 0 6px; border-radius: 3px;
   border: 2.5px solid transparent; background: transparent; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 2px;
 }
@@ -196,7 +196,7 @@ body[data-phase="lost"] .hotbar { opacity: .5; pointer-events: none; }
   .fabs { position-anchor: --dock; bottom: calc(anchor(top) + 12px); }
 }
 .fab {
-  width: var(--tap); height: var(--tap); border-radius: 50%; display: grid; place-items: center; cursor: pointer;
+  width: var(--tap); height: var(--tap); border-radius: var(--r); display: grid; place-items: center; cursor: pointer;
   font: 600 15px/1 var(--num);
 }
 .fab svg { width: 24px; height: 24px; fill: none; stroke: var(--ink); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
@@ -212,7 +212,7 @@ body[data-paused="true"] .fab[data-key="KeyP"] { background: linear-gradient(180
 body[data-paused="true"] .stage::after {
   /* Below the HUD (two chip rows on a phone), clear of the wave chip. */
   content: 'PAUSA'; position: absolute; left: 50%; top: calc(112px + env(safe-area-inset-top, 0px)); translate: -50% 0;
-  padding: 7px 16px; border-radius: 8px; background: var(--brass-bg); color: var(--ink);
+  padding: 7px 16px; border-radius: 3px; background: var(--brass-bg); color: var(--ink);
   border: var(--b); box-shadow: inset 0 1px 0 #fff6, var(--pop);
   font: 400 14px/1 var(--display); letter-spacing: .16em;
 }
@@ -238,7 +238,7 @@ body[data-paused="true"] .stage::after {
   background: rgba(43, 35, 64, .55);
 }
 .gameover .card {
-  width: min(86%, 320px); padding: 24px 22px 22px; border-radius: 22px; text-align: center;
+  width: min(86%, 320px); padding: 24px 22px 22px; border-radius: var(--r); text-align: center;
   box-shadow: 0 6px 0 var(--ink);
   animation: pop .35s cubic-bezier(.3,1.6,.5,1);
 }
@@ -246,7 +246,7 @@ body[data-paused="true"] .stage::after {
 .gameover h2 { margin: 0 0 8px; font: 400 26px/1.1 var(--display); color: #ff8a6e; letter-spacing: .02em; }
 .gameover p { margin: 0 0 18px; color: var(--fg); font: 500 14px/1.45 var(--ui); }
 .gameover button {
-  width: 100%; height: var(--tap); border-radius: 12px; cursor: pointer;
+  width: 100%; height: var(--tap); border-radius: 3px; cursor: pointer;
   font: 400 17px/1 var(--display); letter-spacing: .04em;
 }
 
@@ -254,21 +254,21 @@ body[data-paused="true"] .stage::after {
    Same styles for both paths; .overlay adds CSS anchor positioning. */
 .inspector {
   box-sizing: border-box; width: 204px; padding: 10px 12px 12px;
-  display: flex; flex-direction: column; gap: 8px; border-radius: 16px;
+  display: flex; flex-direction: column; gap: 8px; border-radius: var(--r);
   color: var(--fg); font: 500 13px/1.25 var(--ui);
 }
 .inspector header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .inspector header b { font: 400 15px/1 var(--display); color: var(--brass-hi); letter-spacing: .02em; }
-.inspector .i-close { all: unset; cursor: pointer; width: 28px; height: 28px; display: grid; place-items: center; color: var(--dim); font-size: 20px; border-radius: 8px; }
+.inspector .i-close { all: unset; cursor: pointer; width: 28px; height: 28px; display: grid; place-items: center; color: var(--dim); font-size: 20px; border-radius: 2px; }
 .inspector .i-close:focus-visible { outline: 3px solid var(--core); }
-.inspector .i-hp { height: 10px; background: var(--paper-2); border: 2px solid var(--ink); border-radius: 6px; overflow: hidden; box-sizing: border-box; }
+.inspector .i-hp { height: 10px; background: var(--paper-2); border: 2px solid var(--ink); border-radius: 1px; overflow: hidden; box-sizing: border-box; }
 .inspector .i-hp i { display: block; height: 100%; background: var(--good); }
 .inspector dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; }
 .inspector dt { color: var(--dim); }
 .inspector dd { margin: 0; text-align: right; font: 600 13px var(--num); font-variant-numeric: tabular-nums; }
 .inspector footer { display: flex; gap: 6px; }
 .inspector footer button {
-  flex: 1; min-height: 40px; font: 600 13px var(--ui); border-radius: 12px; cursor: pointer;
+  flex: 1; min-height: 40px; font: 600 13px var(--ui); border-radius: 3px; cursor: pointer;
 }
 .inspector footer button.danger { color: #fff; background: linear-gradient(180deg, #f0685a, var(--danger) 60%, #a82a1e); }
 .inspector footer:not(:has(button:not([hidden]))) { display: none; }
