@@ -47,8 +47,9 @@ export class Inspector {
   private sig = '';
   private at: [number, number] | null = null;
 
-  constructor(canvas: HTMLCanvasElement, stage: HTMLElement, onAction: (a: InspectorAction) => void) {
-    this.mode = supportsHtmlInCanvas ? 'canvas' : 'overlay';
+  constructor(canvas: HTMLCanvasElement, stage: HTMLElement, onAction: (a: InspectorAction) => void, allowInCanvas = true) {
+    // drawElementImage is a 2D-context API: with the WebGL renderer, use the anchored overlay.
+    this.mode = supportsHtmlInCanvas && allowInCanvas ? 'canvas' : 'overlay';
     this.stage = stage;
     this.canvas = canvas;
 

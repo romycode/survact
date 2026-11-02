@@ -1,6 +1,6 @@
 # survact
 
-Factory + tower defense en tiempo continuo, en un mundo infinito. TypeScript sin motor, render Canvas 2D. Vista 3/4 alineada con el grid: filas horizontales, cámara inclinada para dar volumen (se ve la tapa y la cara frontal de cada edificio).
+Factory + tower defense en tiempo continuo, en un mundo infinito. TypeScript sin motor, render **WebGL2** (Canvas 2D de respaldo con `?render=2d`). Vista 3/4 alineada con el grid: filas horizontales, cámara inclinada para dar volumen (se ve la tapa y la cara frontal de cada edificio).
 
 - **Sin dinero.** Todo se paga con recursos que tienen que llegar al núcleo por cinta.
 - **Hierro** → minero → cinta → **horno** → **placas**. Torretas cuestan placas; el resto, hierro.
@@ -52,7 +52,8 @@ src/
   input.ts           punteros: tap / línea en L / pan / pinch, sobre planos
   plans.ts           planos fantasma: validez, coste acumulado, commit a comandos
   inspector.ts       ficha del edificio: HTML-in-Canvas o overlay con anchor positioning
-  render.ts          el dibujo y el renderer Canvas 2D
+  render.ts          el dibujo (fuente única del arte) y el renderer Canvas 2D
+  gl.ts              renderer WebGL2: atlas precocinado, terreno por chunks, proyección en el shader
   terrainLayer.ts    terreno estático pintado por chunks 8×8 en bitmaps (caché LRU)
   sim/               simulación pura: sin DOM ni reloj
     world.ts         estado, cuenta atrás de oleadas, apply(cmd), tick(), economía, spawns
@@ -72,9 +73,21 @@ Reglas que hay que mantener:
 
 ## Vista
 
-`sx = ox + x·s`, `sy = oy + y·s·0.72 − z·s·0.68`. Sin rotación: el suelo es un rectángulo aplastado, cada edificio enseña tapa y cara sur, y se dibuja de norte a sur. Se probó una cámara isométrica giratoria con WebGL2 (está en el historial de git) y en móvil iba peor.
+`sx = ox + x·s`, `sy = oy + y·s·0.72 − z·s·0.68`. Sin rotación: el suelo es un rectángulo aplastado, cada edificio enseña tapa y cara sur, y se dibuja de norte a sur. 
+## WebGL2
 
-## Rendimiento
+El arte se sigue dibujando con el código Canvas 2D; WebGL solo cambia cómo llega a pantalla. El primer intento (historial de git) iba peor que 2D en móvil por cuatro cosas, y esta versión las evita:
+
+1. **Subidas desde canvas acelerados.** Cada sprite y chunk se pintaba en un OffscreenCanvas en GPU y se subía como textura: en móvil eso es una lectura de vuelta de la GPU por subida. Ahora todo se pinta en canvas de CPU (`willReadFrequently`) y subir es copiar memoria.
+2. **Sprites perezosos.** Las poses de los bichos y las fases de las cintas se pintaban la primera vez que aparecían, o sea a tirones en plena oleada. Ahora el atlas entero (~300 sprites) se hornea al arrancar.
+3. **Repintar al hacer zoom.** Atlas y terreno se tiraban y se repintaban al zoom exacto cada vez que soltabas el pellizco. Ahora hay niveles fijos de resolución (sprites 48/96/144 px por tile, terreno 32–128) con mipmaps: el zoom no repinta nada. Solo al cruzar de nivel se rehace, unos ms por frame en segundo plano, y se cambia cuando está completo.
+4. **Fill rate en pantallas 3×.** El backing store se limita a 2× (2,25× menos píxeles).
+
+Además la proyección va en el vertex shader (la cámara son 3 uniforms) y el terreno se pinta con presupuesto de tiempo por frame (un chunk aún sin pintar se ve como césped liso un instante).
+
+`?fps` muestra fps, el peor frame del último segundo y el DPR efectivo; `?render=2d` fuerza Canvas 2D para comparar en el mismo móvil.
+
+## Rendimiento (Canvas 2D)
 
 El render no repinta lo que no cambia:
 

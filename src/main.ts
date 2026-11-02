@@ -1,4 +1,5 @@
 import { Camera } from './camera';
+import { GLRenderer } from './gl';
 import { Hud, TOOL_KEYS } from './hud';
 import { Inspector } from './inspector';
 import { attachInput } from './input';
@@ -12,9 +13,14 @@ const SPEEDS = [1, 2, 3];
 let paused = false;
 
 const canvas = document.querySelector<HTMLCanvasElement>('#game')!;
-
-const ctx = canvas.getContext('2d')!;
 const host = canvas.parentElement!;
+const params = new URLSearchParams(location.search);
+
+// WebGL2 by default; ?render=2d forces Canvas 2D (also the fallback without WebGL2).
+const gl = params.get('render') === '2d' ? null : canvas.getContext('webgl2', { alpha: false, antialias: false, stencil: true, premultipliedAlpha: true, powerPreference: 'high-performance' });
+const ctx = (gl ? null : canvas.getContext('2d')) as CanvasRenderingContext2D;
+let glr: GLRenderer | null = null;
+const rendererName = () => (glr ? 'webgl2' : '2d');
 
 let world = newWorld();
 const cam = new Camera();
@@ -47,7 +53,8 @@ function newWorld(): World {
 
 // ---------- HiDPI resize (fits the canvas's parent, not the window) ----------
 function resize(): void {
-  dpr = window.devicePixelRatio || 1;
+  // WebGL: cap the backing store at 2× — on 3× phones that's 2.25× fewer pixels to fill, barely visible in cartoon art.
+  dpr = Math.min(window.devicePixelRatio || 1, gl ? 2 : Infinity);
   cssW = host.clientWidth;
   cssH = host.clientHeight;
   canvas.width = Math.round(cssW * dpr);
@@ -58,6 +65,25 @@ function resize(): void {
 }
 new ResizeObserver(resize).observe(host);
 resize();
+
+function startGL(): void {
+  if (!gl) return;
+  try {
+    glr = new GLRenderer(gl, dpr, cam.scale * dpr);
+  } catch (err) {
+    console.warn('WebGL2 falló al iniciar', err);
+    glr = null;
+  }
+}
+startGL();
+if (gl) {
+  canvas.addEventListener('webglcontextlost', (e) => {
+    e.preventDefault(); // allow restore (phones drop contexts when backgrounded)
+    glr = null;
+  });
+  canvas.addEventListener('webglcontextrestored', startGL);
+}
+document.body.dataset.renderer = rendererName();
 
 const inspector = new Inspector(
   canvas,
@@ -70,6 +96,7 @@ const inspector = new Inspector(
     ui.sel = null;
   }
   },
+  !gl,
 );
 document.body.dataset.htmlInCanvas = inspector.mode === 'canvas' ? 'on' : 'off';
 
@@ -170,8 +197,21 @@ for (const b of document.querySelectorAll<HTMLElement>('[data-key]')) {
 const hud = new Hud(ui, plans);
 
 function drawFrame(alpha: number): void {
-  render(ctx, world, cam, ui, alpha, dpr, cssW, cssH);
+  if (glr) glr.render(world, cam, ui, alpha, dpr, cssW, cssH);
+  else if (ctx) render(ctx, world, cam, ui, alpha, dpr, cssW, cssH);
 }
+
+// ?fps: frame-time meter, to compare renderers on a real device.
+const fpsEl = params.has('fps') ? Object.assign(document.createElement('div'), { className: 'fps' }) : null;
+if (fpsEl) {
+  fpsEl.style.cssText =
+    'position:fixed;left:8px;bottom:calc(8px + env(safe-area-inset-bottom,0px));z-index:99;font:600 12px/1.2 ui-monospace,monospace;color:#ffe3a0;background:rgba(42,29,20,.85);padding:4px 6px;border-radius:6px;pointer-events:none';
+  document.body.append(fpsEl);
+}
+let fpsFrames = 0;
+let fpsT0 = performance.now();
+let fpsWorst = 0;
+let fpsPrev = performance.now();
 
 // ---------- Fixed-timestep loop ----------
 let acc = 0;
@@ -193,7 +233,18 @@ function frame(now: number): void {
   ui.planEval = plans.size > 0 ? plans.evaluate(world) : null;
   drawFrame(acc / DT);
   inspector.update(world, cam, ui);
-  inspector.draw(ctx, dpr, cssW, cssH);
+  if (ctx) inspector.draw(ctx, dpr, cssW, cssH);
+  if (fpsEl) {
+    fpsFrames++;
+    fpsWorst = Math.max(fpsWorst, now - fpsPrev);
+    fpsPrev = now;
+    if (now - fpsT0 >= 1000) {
+      fpsEl.textContent = `${rendererName()} · ${Math.round((fpsFrames * 1000) / (now - fpsT0))} fps · peor ${Math.round(fpsWorst)} ms · dpr ${dpr}`;
+      fpsFrames = 0;
+      fpsWorst = 0;
+      fpsT0 = now;
+    }
+  }
   hud.sync(world, paused);
   requestAnimationFrame(frame);
 }
@@ -207,21 +258,26 @@ requestAnimationFrame(frame);
   cam,
   ui,
   inspector,
-  /** Average ms per render() over n frames, for profiling. */
-  /** Average ms per frame over n frames. sync=true waits for the canvas to finish each frame. */
-  benchRender(n = 60, sync = true): { total: number; phases: Record<string, number>; chunks: unknown } {
+  get renderer() {
+    return rendererName();
+  },
+  /** Average ms per frame over n frames. sync=true waits for the GPU to finish each frame. */
+  benchRender(n = 60, sync = true): { renderer: string; total: number; phases: Record<string, number>; chunks: unknown } {
     prof.on = true;
     prof.ms = {};
     const t0 = performance.now();
     for (let i = 0; i < n; i++) {
       drawFrame(0);
       // sync: wait for the GPU to finish the frame (reading one pixel back), for both renderers.
-      if (sync) ctx.getImageData(0, 0, 1, 1);
+      if (sync) {
+        if (gl && glr) gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array(4));
+        else if (ctx) ctx.getImageData(0, 0, 1, 1);
+      }
     }
     const total = (performance.now() - t0) / n;
     prof.on = false;
     const phases: Record<string, number> = {};
     for (const [k, v] of Object.entries(prof.ms)) phases[k] = Math.round((v / n) * 100) / 100;
-    return { total: Math.round(total * 100) / 100, phases, chunks: terrainCache.stats };
+    return { renderer: rendererName(), total: Math.round(total * 100) / 100, phases, chunks: glr ? glr.stats : terrainCache.stats };
   },
 };

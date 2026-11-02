@@ -97,7 +97,7 @@ export const C = {
 /** Outline width in CSS px for a given zoom. */
 export const inkW = (cam: Proj) => Math.max(1.1, cam.scale * 0.026);
 
-interface View {
+export interface View {
   x0: number;
   y0: number;
   x1: number;
@@ -256,7 +256,8 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
   }
 }
 
-function drawPaths(ctx: CanvasRenderingContext2D, world: World): void {
+/** Tiles on the predicted enemy routes (spawns → core). Shared by both renderers. */
+export function routeKeys(world: World): Set<number> {
   world.syncFlow();
   const seen = new Set<number>();
   for (const s of world.spawns) {
@@ -267,6 +268,11 @@ function drawPaths(ctx: CanvasRenderingContext2D, world: World): void {
       k = world.flow.nextKey(k);
     }
   }
+  return seen;
+}
+
+function drawPaths(ctx: CanvasRenderingContext2D, world: World): void {
+  const seen = routeKeys(world);
   ctx.fillStyle = C.path;
   ctx.beginPath();
   for (const k of seen) {
@@ -458,7 +464,7 @@ function blitBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: 
   let aim: number | undefined;
   let variant = '';
   if (t.b === Building.Turret) {
-    const q = ((Math.round((aimAngle / (Math.PI * 2)) * AIM_STEPS) % AIM_STEPS) + AIM_STEPS) % AIM_STEPS;
+    const q = aimStep(x, y);
     aim = (q / AIM_STEPS) * Math.PI * 2;
     variant = `${q}${t.ammo === 0 ? 'e' : ''}`;
   } else if (t.b === Building.Furnace || t.b === Building.Miner) {
@@ -473,9 +479,7 @@ function blitBuilding(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: 
 }
 
 function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui: UiState, alpha: number, v: View, dpr: number): void {
-  for (const sh of world.shots) {
-    turretAim.set(key(Math.floor(sh.fromX), Math.floor(sh.fromY)), Math.atan2(sh.toY - sh.fromY, sh.toX - sh.fromX));
-  }
+  updateAims(world);
   sprites.tick(cam.scale * dpr);
   const list: Drawable[] = [];
   for (const [k, t] of world.grid.tiles) {
@@ -520,6 +524,19 @@ export const HEIGHT: Partial<Record<Building, number>> = {
 
 /** Last aim angle per turret (render-side only, from the shots it fired). */
 export const turretAim = new Map<number, number>();
+
+/** Turrets keep facing their last shot. */
+export function updateAims(world: World): void {
+  for (const sh of world.shots) {
+    turretAim.set(key(Math.floor(sh.fromX), Math.floor(sh.fromY)), Math.atan2(sh.toY - sh.fromY, sh.toX - sh.fromX));
+  }
+}
+
+/** Turret aim quantised to the baked sprite steps. */
+export function aimStep(x: number, y: number): number {
+  const a = turretAim.get(key(x, y)) ?? Math.PI / 2;
+  return ((Math.round((a / (Math.PI * 2)) * AIM_STEPS) % AIM_STEPS) + AIM_STEPS) % AIM_STEPS;
+}
 
 export function drawBuilding(
   ctx: CanvasRenderingContext2D,
@@ -647,13 +664,19 @@ export function drawBuilding(
 // ---------------- steampunk detail helpers ----------------
 
 /** Furnace smoke: three puffs rising and drifting from the stack. */
+/** Smoke puff i (0..2): ground x, y, height z, radius (tiles), alpha. */
+export function smokePuff(x: number, y: number, time: number, i: number): [number, number, number, number, number] {
+  const ph = (time / 50 + i / 3) % 1;
+  return [x + 0.27 - ph * 0.12, y + 0.27, 1.3 + ph * 0.8, 0.05 + 0.08 * ph, 0.5 * (1 - ph)];
+}
+
 function smoke(ctx: CanvasRenderingContext2D, cam: Proj, x: number, y: number, time: number): void {
   for (let i = 0; i < 3; i++) {
-    const ph = (time / 50 + i / 3) % 1;
-    const [sx, sy] = cam.project(x + 0.27 - ph * 0.12, y + 0.27, 1.3 + ph * 0.8);
-    ctx.fillStyle = `rgba(200,190,175,${(0.5 * (1 - ph)).toFixed(3)})`;
+    const [px, py, pz, r, a] = smokePuff(x, y, time, i);
+    const [sx, sy] = cam.project(px, py, pz);
+    ctx.fillStyle = `rgba(200,190,175,${a.toFixed(3)})`;
     ctx.beginPath();
-    ctx.arc(sx, sy, cam.scale * (0.05 + 0.08 * ph), 0, Math.PI * 2);
+    ctx.arc(sx, sy, cam.scale * r, 0, Math.PI * 2);
     ctx.fill();
   }
 }
@@ -799,6 +822,18 @@ function gauge(ctx: CanvasRenderingContext2D, cam: Proj, x: number, y: number, z
 }
 
 /** Glowing furnace mouth on the face it outputs through (or the top edge if that face is hidden). */
+/**
+ * Furnace mouth in ground coords: [x0, x1, y, z0, z1] on the front face, or
+ * for north-facing ones [x0, x1, y0, y1, z] lying on the top (top: true).
+ */
+export function mouthRect(x: number, y: number, dir: number): { top: boolean; a: number; b: number; c: number; d: number; e: number } {
+  const cx = x + 0.5;
+  if (dir === 3) return { top: true, a: cx - 0.17, b: cx + 0.17, c: y + 0.1, d: y + 0.3, e: 0.55 };
+  const mx = dir === 0 ? x + 0.72 : dir === 2 ? x + 0.28 : cx;
+  const w = dir === 1 ? 0.17 : 0.12;
+  return { top: false, a: mx - w, b: mx + w, c: y + 0.92, d: 0.1, e: 0.34 };
+}
+
 export function furnaceMouth(ctx: CanvasRenderingContext2D, cam: Proj, x: number, y: number, t: Tile, color: string): void {
   const cx = x + 0.5;
   const z0 = 0.1;
@@ -1122,36 +1157,74 @@ export function lerp(a: number, b: number, t: number): number {
 // Day / night
 // =====================================================================
 
+/**
+ * Shadow offset per unit of height. Swings from +x (morning) to +y (evening),
+ * shortest at noon; long shadows at the ends sell the time of day.
+ */
+export function sunVector(world: World): [number, number] {
+  const p = Math.min(1, Math.max(0, (world.dayPhase - DAY.dawnEnd * 0.5) / (DAY.nightStart - DAY.dawnEnd)));
+  const ang = p * (Math.PI / 2);
+  const len = 0.45 + 1.6 * Math.abs(p - 0.5) * 2;
+  return [Math.cos(ang) * len, Math.sin(ang) * len];
+}
+
+/** Square footprint swept along (sx, sy) ≥ 0: its hull is this hexagon (ground coords). */
+export function shadowHex(x: number, y: number, h: number, sx: number, sy: number): [number, number][] {
+  const a = x + 0.08;
+  const b = x + 0.92;
+  const c = y + 0.08;
+  const d = y + 0.92;
+  const u = sx * h;
+  const w = sy * h;
+  return [[a, c], [b, c], [b + u, c + w], [b + u, d + w], [a + u, d + w], [a, d]];
+}
+
+export interface LightSource {
+  x: number;
+  y: number;
+  r: number;
+  color: string | null;
+}
+
+/** Light sources at night: core, armed turrets, furnaces, miners. */
+export function lightSources(world: World, v: View): LightSource[] {
+  const lights: LightSource[] = [];
+  const flicker = 0.92 + 0.08 * Math.sin(world.tickCount * 0.7);
+  const lv: View = { x0: v.x0 - 5, y0: v.y0 - 5, x1: v.x1 + 5, y1: v.y1 + 5 };
+  for (const [k, t] of world.grid.tiles) {
+    if (!inView(k, lv)) continue;
+    const x = kx(k) + 0.5;
+    const y = ky(k) + 0.5;
+    switch (t.b) {
+      case Building.Core:
+        lights.push({ x, y, r: 4.8, color: 'rgba(111,224,192,0.10)' });
+        break;
+      case Building.Turret:
+        if (t.ammo > 0) lights.push({ x, y, r: 2.4, color: null });
+        break;
+      case Building.Furnace:
+        lights.push({ x, y, r: t.cd > 0 ? 2.3 * flicker : 1.1, color: t.cd > 0 ? 'rgba(251,146,60,0.16)' : null });
+        break;
+      case Building.Miner:
+        lights.push({ x, y, r: 1.1, color: null });
+        break;
+    }
+  }
+  return lights;
+}
+
 /** Sun shadows: each building's footprint swept along the sun direction. */
 function drawShadows(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v: View): void {
   const light = world.daylight;
   if (light <= 0.02) return;
-  const t = world.dayPhase;
-  // 0 at sunrise, 1 at sunset (clamped for dawn/dusk).
-  const p = Math.min(1, Math.max(0, (t - DAY.dawnEnd * 0.5) / (DAY.nightStart - DAY.dawnEnd)));
-  // Shadows swing from pointing +x (morning, down-right) to +y (evening, down-left),
-  // shortest at noon. Long shadows at the ends sell the time of day.
-  const ang = p * (Math.PI / 2);
-  const len = 0.45 + 1.6 * Math.abs(p - 0.5) * 2;
-  const sx = Math.cos(ang) * len;
-  const sy = Math.sin(ang) * len;
+  const [sx, sy] = sunVector(world);
 
   ctx.fillStyle = `rgba(40,28,14,${(0.26 * light).toFixed(3)})`;
   ctx.beginPath();
   for (const [k, tile] of world.grid.tiles) {
     if (isBelt(tile.b) || !inView(k, v)) continue;
     const h = HEIGHT[tile.b] ?? 0.5;
-    const x = kx(k);
-    const y = ky(k);
-    // Square footprint swept along (sx, sy), both ≥ 0: its hull is this hexagon.
-    const a = x + 0.08;
-    const b = x + 0.92;
-    const c = y + 0.08;
-    const d = y + 0.92;
-    const u = sx * h;
-    const w = sy * h;
-    const hex: [number, number][] = [[a, c], [b, c], [b + u, c + w], [b + u, d + w], [a + u, d + w], [a, d]];
-    hex.forEach(([px0, py0], i) => {
+    shadowHex(kx(k), ky(k), h, sx, sy).forEach(([px0, py0], i) => {
       const [px, py] = cam.project(px0, py0, 0);
       if (i === 0) ctx.moveTo(px, py);
       else ctx.lineTo(px, py);
@@ -1205,28 +1278,7 @@ function drawLighting(
   dctx.fillStyle = `rgba(22,16,34,${(0.74 * dark).toFixed(3)})`;
   dctx.fillRect(0, 0, cssW, cssH);
 
-  const lights: { x: number; y: number; r: number; color: string | null }[] = [];
-  const flicker = 0.92 + 0.08 * Math.sin(world.tickCount * 0.7);
-  const lv: View = { x0: v.x0 - 5, y0: v.y0 - 5, x1: v.x1 + 5, y1: v.y1 + 5 };
-  for (const [k, t] of world.grid.tiles) {
-    if (!inView(k, lv)) continue;
-    const x = kx(k) + 0.5;
-    const y = ky(k) + 0.5;
-    switch (t.b) {
-      case Building.Core:
-        lights.push({ x, y, r: 4.8, color: 'rgba(111,224,192,0.10)' });
-        break;
-      case Building.Turret:
-        if (t.ammo > 0) lights.push({ x, y, r: 2.4, color: null });
-        break;
-      case Building.Furnace:
-        lights.push({ x, y, r: t.cd > 0 ? 2.3 * flicker : 1.1, color: t.cd > 0 ? 'rgba(251,146,60,0.16)' : null });
-        break;
-      case Building.Miner:
-        lights.push({ x, y, r: 1.1, color: null });
-        break;
-    }
-  }
+  const lights = lightSources(world, v);
 
   dctx.globalCompositeOperation = 'destination-out';
   for (const l of lights) isoGlow(dctx, cam, l.x, l.y, l.r, 'rgba(0,0,0,1)');
