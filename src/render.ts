@@ -10,7 +10,7 @@
 import { Camera, type Proj } from './camera';
 import { BELT_TICKS, BUILDINGS, Building, DAY, isBelt, DIR_X, DIR_Y, Item, MAP, TURRET, type Placeable } from './sim/defs';
 import { NO_NEXT } from './sim/flowfield';
-import { TerrainCache, paintTerrain } from './terrainLayer';
+import { T, TerrainCache, paintTerrain } from './terrainLayer';
 
 export const terrainCache = new TerrainCache();
 import { key, kx, ky, type Tile } from './sim/grid';
@@ -44,56 +44,54 @@ export interface UiState {
   planEval: PlanEval | null;
 }
 
-// Cartoon palette: saturated, warm, two-tone shading + dark ink outlines.
-const C = {
-  ink: '#2b2340',
-  bg: '#5aa65a',
-  land: '#8fd16a',
-  landAlt: '#86c962',
-  reachTint: 'rgba(255,255,230,0.16)',
-  grid: 'rgba(43,35,64,0.07)',
-  tuft: '#5ea84a',
-  flowerA: '#fff4d6',
-  flowerB: '#ffd34d',
-  bank: '#e8c27f',
-  bankDark: '#c99a5a',
-  water: '#46c2e0',
-  waterLight: '#7fdcf0',
-  foam: '#e9fbff',
-  ore: '#7a5235',
-  oreHi: '#c08a5a',
-  oreGround: '#d4a46a',
-  spawn: '#ff4f64',
-  path: 'rgba(255,79,100,0.55)',
-  core: '#4fb3ff',
-  wall: '#b9b3c9',
-  turretBase: '#8a7a6a',
-  turret: '#ffc93c',
-  belt: '#6d7287',
-  fastBelt: '#5a6fb0',
-  fastBeltRail: '#ffc93c',
-  fastBeltMark: '#d9e6ff',
-  oreRich: '#d39a63',
-  beltMark: '#c9cde0',
-  miner: '#d08b4f',
-  furnace: '#e8664a',
-  furnaceHot: '#ffd166',
-  iron: '#a86d43',
-  plate: '#e6ebf2',
-  noAmmo: '#ff4f64',
-  enemy: '#ff5d73',
-  enemyLight: '#ffb3be',
-  shadow: 'rgba(30,50,30,0.25)',
-  shot: '#fff2a8',
-  sel: '#fff2a8',
-  hpBg: 'rgba(43,35,64,0.75)',
-  hpFg: '#5be37f',
-  range: 'rgba(255,201,60,0.8)',
-  ok: 'rgba(91,227,127,0.45)',
-  bad: 'rgba(255,79,100,0.45)',
-  plan: 'rgba(79,179,255,0.35)',
-  planEdge: '#2f8fe0',
-  planBad: 'rgba(255,79,100,0.5)',
+// Cartoon steampunk palette: brass, copper, riveted iron, oiled wood,
+// mossy industrial ground; warm sepia ink outlines everything.
+export const C = {
+  ink: '#2a1d14',
+  bg: '#6f7a3a',
+  reachTint: 'rgba(255,236,190,0.18)',
+  brass: '#d4a948',
+  brassHi: '#f2d488',
+  copper: '#c46d3e',
+  iron: '#6f6862',
+  ironDark: '#4b4540',
+  steel: '#9a9ca3',
+  wood: '#8a5a36',
+  aether: '#6fe0c0',
+  aetherHi: '#d4fff1',
+  spawn: '#e0402f',
+  path: 'rgba(224,64,47,0.55)',
+  core: '#6fe0c0',
+  wall: '#7a736c',
+  turretBase: '#5a534d',
+  turret: '#d4a948',
+  belt: '#4b4540',
+  beltSlat: '#6b625a',
+  fastBelt: '#7a4a2c',
+  fastBeltRail: '#d4a948',
+  fastBeltMark: '#ffe2a0',
+  beltMark: '#d4a948',
+  miner: '#8a5a36',
+  furnace: '#c46d3e',
+  furnaceHot: '#ffc35a',
+  ore: '#4d4b52',
+  oreItem: '#56545c',
+  rust: '#b4683e',
+  plate: '#cfd2d8',
+  noAmmo: '#e0402f',
+  enemy: '#c8443c',
+  enemyLight: '#f08a6e',
+  shadow: 'rgba(40,30,15,0.28)',
+  shot: '#ffe3a0',
+  sel: '#ffe3a0',
+  hpBg: 'rgba(42,29,20,0.8)',
+  hpFg: '#8fd45a',
+  range: 'rgba(212,169,72,0.85)',
+  ok: 'rgba(143,212,90,0.45)',
+  bad: 'rgba(224,64,47,0.45)',
+  plan: 'rgba(111,224,192,0.35)',
+  planEdge: '#3fb38f',
+  planBad: 'rgba(224,64,47,0.5)',
 };
 
 /** Outline width in CSS px for a given zoom. */
@@ -125,8 +123,8 @@ export function render(
   let t = performance.now();
   const cached = terrainCache.draw(ctx, world, cam, dpr, cssW, cssH);
   if (!cached) {
-    const vv = cam.visibleView();
-    cam.applyGroundView(ctx, dpr);
+    const vv = cam.visibleViewK();
+    cam.applyGroundViewK(ctx, dpr);
     paintTerrain(ctx, world, vv.x0, vv.y0, vv.x1, vv.y1, cam.scale, cam);
   }
   cam.applyGround(ctx, dpr);
@@ -188,50 +186,18 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
   }
 
   // Belts (flat) and their items
+  const gink = 1.6 * gpx;
   for (const [k, t] of grid.tiles) {
     if (!isBelt(t.b) || !inView(k, v)) continue;
-    const x = kx(k);
-    const y = ky(k);
-    const fast = t.b === Building.FastBelt;
     const period = BELT_TICKS[t.b]!;
-    const phase = (world.tickCount % period) / period;
-    ctx.fillStyle = fast ? C.fastBelt : C.belt;
-    ctx.fillRect(x + 0.08, y + 0.08, 0.84, 0.84);
-    ctx.strokeStyle = C.ink;
-    ctx.lineWidth = 1.6 * gpx;
-    ctx.strokeRect(x + 0.08, y + 0.08, 0.84, 0.84);
-    if (fast) {
-      ctx.fillStyle = C.fastBeltRail;
-      ctx.fillRect(x + 0.1 + (DIR_X[t.dir] === 0 ? 0 : 0), y + 0.1, DIR_X[t.dir] === 0 ? 0.08 : 0.8, DIR_X[t.dir] === 0 ? 0.8 : 0.08);
-      ctx.fillRect(
-        DIR_X[t.dir] === 0 ? x + 0.82 : x + 0.1,
-        DIR_X[t.dir] === 0 ? y + 0.1 : y + 0.82,
-        DIR_X[t.dir] === 0 ? 0.08 : 0.8,
-        DIR_X[t.dir] === 0 ? 0.8 : 0.08,
-      );
-    }
-    for (let i = 0; i < 2; i++) {
-      const s = ((i * 0.5 + phase) % 1) - 0.5;
-      groundArrow(ctx, x + 0.5 + DIR_X[t.dir] * s * 0.7, y + 0.5 + DIR_Y[t.dir] * s * 0.7, t.dir, 0.15, fast ? C.fastBeltMark : C.beltMark);
-    }
+    paintBelt(ctx, kx(k), ky(k), t.b, t.dir, (world.tickCount % period) / period, gink);
   }
   for (const [k, t] of grid.tiles) {
     if (!isBelt(t.b) || !t.item || !inView(k, v)) continue;
     const s = t.prog / BELT_TICKS[t.b]! - 0.5;
     const cx = kx(k) + 0.5 + DIR_X[t.dir] * s;
     const cy = ky(k) + 0.5 + DIR_Y[t.dir] * s;
-    ctx.strokeStyle = C.ink;
-    ctx.lineWidth = 1.6 * gpx;
-    ctx.beginPath();
-    if (t.item === Item.Plate) {
-      ctx.fillStyle = C.plate;
-      ctx.roundRect(cx - 0.16, cy - 0.16, 0.32, 0.32, 0.06);
-    } else {
-      ctx.fillStyle = C.iron;
-      ctx.arc(cx, cy, 0.16, 0, Math.PI * 2);
-    }
-    ctx.fill();
-    ctx.stroke();
+    paintItem(ctx, cx, cy, t.item, gink);
   }
 
   // Plans (ghosts) on the ground
@@ -324,6 +290,92 @@ function groundArrow(ctx: CanvasRenderingContext2D, cx: number, cy: number, d: n
   ctx.fill();
 }
 
+/**
+ * A belt tile in ground coords: iron frame, rubber band with slats that move,
+ * brass chevrons. Fast belts: copper band with brass side rails.
+ */
+export function paintBelt(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  b: number,
+  dir: number,
+  phase: number,
+  ink: number,
+): void {
+  const fast = b === Building.FastBelt;
+  const along = DIR_X[dir] !== 0; // band runs along x
+  ctx.fillStyle = C.ironDark;
+  ctx.fillRect(x + 0.06, y + 0.06, 0.88, 0.88);
+  ctx.fillStyle = fast ? C.fastBelt : C.belt;
+  if (along) ctx.fillRect(x + 0.06, y + 0.2, 0.88, 0.6);
+  else ctx.fillRect(x + 0.2, y + 0.06, 0.6, 0.88);
+  // slats moving with the band
+  ctx.strokeStyle = fast ? '#9a6038' : C.beltSlat;
+  ctx.lineWidth = ink * 1.2;
+  ctx.beginPath();
+  for (let i = 0; i < 3; i++) {
+    const s = ((i / 3 + phase) % 1) * 0.88 + 0.06;
+    const t = DIR_X[dir] < 0 || DIR_Y[dir] < 0 ? 1 - s : s;
+    if (along) {
+      ctx.moveTo(x + t, y + 0.22);
+      ctx.lineTo(x + t, y + 0.78);
+    } else {
+      ctx.moveTo(x + 0.22, y + t);
+      ctx.lineTo(x + 0.78, y + t);
+    }
+  }
+  ctx.stroke();
+  if (fast) {
+    ctx.fillStyle = C.fastBeltRail;
+    if (along) {
+      ctx.fillRect(x + 0.06, y + 0.12, 0.88, 0.07);
+      ctx.fillRect(x + 0.06, y + 0.81, 0.88, 0.07);
+    } else {
+      ctx.fillRect(x + 0.12, y + 0.06, 0.07, 0.88);
+      ctx.fillRect(x + 0.81, y + 0.06, 0.07, 0.88);
+    }
+  }
+  groundArrow(ctx, x + 0.5 + DIR_X[dir] * 0.12, y + 0.5 + DIR_Y[dir] * 0.12, dir, 0.16, fast ? C.fastBeltMark : C.beltMark);
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = ink;
+  ctx.strokeRect(x + 0.06, y + 0.06, 0.88, 0.88);
+}
+
+/** Iron ore chunk (rough, rusty) or a steel plate, in ground coords. */
+export function paintItem(ctx: CanvasRenderingContext2D, cx: number, cy: number, item: number, ink: number): void {
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = ink;
+  ctx.beginPath();
+  if (item === Item.Plate) {
+    ctx.fillStyle = C.plate;
+    ctx.rect(cx - 0.16, cy - 0.16, 0.32, 0.32);
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = C.ink;
+    for (const [dx, dy] of [[-0.09, -0.09], [0.09, -0.09], [-0.09, 0.09], [0.09, 0.09]]) {
+      ctx.beginPath();
+      ctx.arc(cx + dx, cy + dy, 0.025, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else {
+    ctx.fillStyle = C.oreItem;
+    ctx.moveTo(cx - 0.16, cy - 0.02);
+    ctx.lineTo(cx - 0.05, cy - 0.16);
+    ctx.lineTo(cx + 0.14, cy - 0.1);
+    ctx.lineTo(cx + 0.16, cy + 0.08);
+    ctx.lineTo(cx + 0.02, cy + 0.16);
+    ctx.lineTo(cx - 0.12, cy + 0.12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    ctx.fillStyle = C.rust;
+    ctx.beginPath();
+    ctx.arc(cx + 0.04, cy - 0.04, 0.05, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function arrowPoints(cx: number, cy: number, d: number, size: number): [number, number][] {
   const fx = DIR_X[d];
   const fy = DIR_Y[d];
@@ -403,14 +455,33 @@ const sprites = {
   },
 };
 
+/**
+ * Projector for drawing a building in K-view coords as a rigid piece placed
+ * where the (possibly mid-turn) camera puts the tile's centre.
+ */
+function localProj(cam: Camera, x: number, y: number, u: number, v: number): Proj {
+  const [kx0, ky0] = cam.projectKFlat(u + 0.5, v + 0.5, 0);
+  const [sx0, sy0] = cam.project(x + 0.5, y + 0.5, 0);
+  const dx = sx0 - kx0;
+  const dy = sy0 - ky0;
+  return {
+    scale: cam.scale,
+    project: (a: number, b: number, z = 0) => {
+      const [px, py] = cam.projectKFlat(a, b, z);
+      return [px + dx, py + dy];
+    },
+  };
+}
+
 function blitBuilding(ctx: CanvasRenderingContext2D, cam: Camera, _dpr: number, x: number, y: number, t: Tile, time: number): void {
   // Buildings are drawn in VIEW space: same faces always visible, any rotation.
   const [u, v] = cam.viewTile(x, y);
   const vt: Tile = BUILDINGS[t.b].directed ? { ...t, dir: cam.viewDir(t.dir) } : t;
   const worldAim = turretAim.get(key(x, y)) ?? Math.PI / 4;
   const viewAim = worldAim + (cam.rot * Math.PI) / 2;
+  const lp = localProj(cam, x, y, u, v);
   if (t.b === Building.Core) {
-    drawBuilding(ctx, cam.view, u, v, vt, time, viewAim);
+    drawBuilding(ctx, lp, u, v, vt, time, viewAim);
     return;
   }
   let aim: number | undefined;
@@ -424,13 +495,13 @@ function blitBuilding(ctx: CanvasRenderingContext2D, cam: Camera, _dpr: number, 
   }
   const sp = sprites.get(vt, aim, variant);
   const k = cam.scale / sprites.scale; // sprite device px -> CSS px
-  const [tx, ty] = cam.projectView(u, v, 0);
+  const [tx, ty] = lp.project(u, v, 0);
   ctx.drawImage(sp.img, tx - sp.ax * k, ty - sp.ay * k, sp.w * k, sp.h * k);
   // Live effects on top of the baked body.
   if (t.b === Building.Furnace && t.cd > 0) {
     for (let i = 0; i < 3; i++) {
       const ph = (time / 50 + i / 3) % 1;
-      const [sx, sy] = cam.projectView(u + 0.25 - ph * 0.15, v + 0.25 - ph * 0.15, 1.2 + ph * 0.7);
+      const [sx, sy] = lp.project(u + 0.25 - ph * 0.15, v + 0.25 - ph * 0.15, 1.2 + ph * 0.7);
       ctx.fillStyle = `rgba(160,160,170,${(0.45 * (1 - ph)).toFixed(3)})`;
       ctx.beginPath();
       ctx.arc(sx, sy, cam.scale * (0.05 + 0.07 * ph), 0, Math.PI * 2);
@@ -449,8 +520,8 @@ function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
     if (isBelt(t.b) || !inView(k, v)) continue;
     const x = kx(k);
     const y = ky(k);
-    const [u, w] = cam.viewTile(x, y);
-    list.push({ depth: u + w + 1, draw: () => blitBuilding(ctx, cam, dpr, x, y, t, world.tickCount) });
+    const [u, w] = cam.toView(x + 0.5, y + 0.5);
+    list.push({ depth: u + w, draw: () => blitBuilding(ctx, cam, dpr, x, y, t, world.tickCount) });
   }
   for (const e of world.enemies) {
     const ex = lerp(e.prevX, e.x, alpha);
@@ -464,9 +535,9 @@ function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
     const y = ky(k);
     const ghost: Tile = { b: p.b, hp: 1, dir: p.dir, cd: 0, ammo: 1, inp: 0, out: 0, item: 0, prog: 0 };
     const ok = ui.planEval?.ok.has(k) ?? false;
-    const [gu, gv] = cam.viewTile(x, y);
+    const [gu, gv] = cam.toView(x + 0.5, y + 0.5);
     list.push({
-      depth: gu + gv + 1,
+      depth: gu + gv,
       draw: () => {
         ctx.globalAlpha = ok ? 0.45 : 0.25;
         blitBuilding(ctx, cam, dpr, x, y, ghost, 0);
@@ -480,12 +551,12 @@ function drawRaised(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
 
 /** Top of each building's silhouette (shadows, bars, icon framing). */
 export const HEIGHT: Partial<Record<Building, number>> = {
-  [Building.Core]: 1.6,
+  [Building.Core]: 1.65,
   [Building.Wall]: 0.62,
-  [Building.Miner]: 1.05,
-  [Building.Furnace]: 1.15,
-  [Building.Turret]: 0.6,
-};
+  [Building.Miner]: 1.15,
+  [Building.Furnace]: 1.3,
+  [Building.Turret]: 0.62,
+}
 
 /** Last aim angle per turret (render-side only, from the shots it fired). */
 const turretAim = new Map<number, number>();
@@ -504,111 +575,265 @@ function drawBuilding(
   const cy = y + 0.5;
   switch (t.b) {
     case Building.Core: {
-      // Stepped plinth + floating octahedral crystal.
-      prism(ctx, cam, x + 0.04, y + 0.04, x + 0.96, y + 0.96, 0, 0.16, '#5d8fcf');
-      prism(ctx, cam, x + 0.17, y + 0.17, x + 0.83, y + 0.83, 0.16, 0.3, '#82b4ea');
+      // Steam engine: riveted iron plinth, copper boiler with brass bands,
+      // brass dome, and an aether crystal floating in a cage of steam.
+      prism(ctx, cam, x + 0.04, y + 0.04, x + 0.96, y + 0.96, 0, 0.16, C.ironDark);
+      rivets(ctx, cam, x + 0.04, y + 0.04, x + 0.96, y + 0.96, 0.1, 5);
+      cylinder(ctx, cam, cx, cy, 0.16, 0.72, 0.34, C.copper);
+      cylinder(ctx, cam, cx, cy, 0.3, 0.36, 0.35, C.brass);
+      cylinder(ctx, cam, cx, cy, 0.58, 0.64, 0.35, C.brass);
+      dome(ctx, cam, cx, cy, 0.72, 0.3, C.brass);
+      // Pressure gauge on the front
+      gauge(ctx, cam, cx + 0.24, cy + 0.24, 0.46, time);
       const bob = 0.05 * Math.sin(time / 28);
       const w = 0.24;
-      const zb = 0.42 + bob;
-      const zm = 0.86 + bob;
-      const zt = 1.55 + bob;
-      // lower half (S, E faces), then upper half
-      tri(ctx, cam, [x + 0.5 - w, cy + w, zm], [cx + w, cy + w, zm], [cx, cy, zb], shade(C.core, 0.55));
-      tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zb], shade(C.core, 0.7));
-      tri(ctx, cam, [cx - w, cy + w, zm], [cx + w, cy + w, zm], [cx, cy, zt], shade(C.core, 0.85));
-      tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zt], '#c4ecff');
+      const zb = 0.98 + bob;
+      const zm = 1.3 + bob;
+      const zt = 1.65 + bob;
+      tri(ctx, cam, [cx - w, cy + w, zm], [cx + w, cy + w, zm], [cx, cy, zb], shade(C.aether, 0.55));
+      tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zb], shade(C.aether, 0.72));
+      tri(ctx, cam, [cx - w, cy + w, zm], [cx + w, cy + w, zm], [cx, cy, zt], shade(C.aether, 0.88));
+      tri(ctx, cam, [cx + w, cy - w, zm], [cx + w, cy + w, zm], [cx, cy, zt], C.aetherHi);
       break;
     }
     case Building.Wall: {
-      // Block with battlements.
-      prism(ctx, cam, x + 0.03, y + 0.03, x + 0.97, y + 0.97, 0, 0.42, C.wall);
-      const m = 0.26;
-      const z0 = 0.42;
-      const z1 = 0.62;
-      prism(ctx, cam, x + 0.05, y + 0.05, x + 0.05 + m, y + 0.05 + m, z0, z1, C.wall);
-      prism(ctx, cam, x + 0.95 - m, y + 0.05, x + 0.95, y + 0.05 + m, z0, z1, C.wall);
-      prism(ctx, cam, x + 0.05, y + 0.95 - m, x + 0.05 + m, y + 0.95, z0, z1, C.wall);
-      prism(ctx, cam, x + 0.95 - m, y + 0.95 - m, x + 0.95, y + 0.95, z0, z1, C.wall);
+      // Riveted iron bulwark with a brass cap rail.
+      prism(ctx, cam, x + 0.03, y + 0.03, x + 0.97, y + 0.97, 0, 0.5, C.wall);
+      seams(ctx, cam, x + 0.03, y + 0.03, x + 0.97, y + 0.97, 0.25);
+      rivets(ctx, cam, x + 0.03, y + 0.03, x + 0.97, y + 0.97, 0.42, 4);
+      prism(ctx, cam, x + 0.0, y + 0.0, x + 1.0, y + 1.0, 0.5, 0.56, C.brass);
+      prism(ctx, cam, x + 0.14, y + 0.14, x + 0.86, y + 0.86, 0.56, 0.62, C.ironDark);
       break;
     }
     case Building.Miner: {
-      // Base plate, output chute, pyramid drill tower.
-      prism(ctx, cam, x + 0.08, y + 0.08, x + 0.92, y + 0.92, 0, 0.2, '#a8693e');
+      // Wooden platform, iron derrick with cross-bracing, brass gear wheel on top.
+      prism(ctx, cam, x + 0.06, y + 0.06, x + 0.94, y + 0.94, 0, 0.18, C.wood);
+      planks(ctx, cam, x + 0.06, y + 0.06, x + 0.94, y + 0.94, 0.18);
       const front = t.dir === 0 || t.dir === 1;
       if (!front) chute(ctx, cam, cx, cy, t.dir);
-      const working = t.cd > 0;
-      const zTop = 1.0 + (working ? 0.03 * Math.sin(time / 3) : 0);
-      pyramid(ctx, cam, x + 0.2, y + 0.2, x + 0.8, y + 0.8, 0.2, [cx, cy, zTop], C.miner);
-      // Pulley at the apex
+      const zTop = 0.95;
+      derrick(ctx, cam, x + 0.2, y + 0.2, x + 0.8, y + 0.8, 0.18, [cx, cy, zTop]);
       const [px, py] = cam.project(cx, cy, zTop);
-      ctx.fillStyle = working ? '#ffd166' : '#7a4a2a';
-      ctx.beginPath();
-      ctx.arc(px, py, Math.max(1.8, cam.scale * 0.05), 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = C.ink;
-      ctx.lineWidth = inkW(cam);
-      ctx.stroke();
+      gear(ctx, px, py, cam.scale * 0.15, 10, C.brass, t.cd > 0 ? (time / 6) % (Math.PI * 2) : 0, inkW(cam));
       if (front) chute(ctx, cam, cx, cy, t.dir);
       break;
     }
     case Building.Furnace: {
-      // Brick body, chimney at the back corner, glowing mouth on the output side.
+      // Copper boiler-furnace with riveted bands, iron smokestack with a brass
+      // collar at the back, glowing firebox on the output side.
       prism(ctx, cam, x + 0.08, y + 0.08, x + 0.92, y + 0.92, 0, 0.55, C.furnace);
-      prism(ctx, cam, x + 0.14, y + 0.14, x + 0.36, y + 0.36, 0.55, 1.15, '#b8473a');
+      bands(ctx, cam, x + 0.08, y + 0.08, x + 0.92, y + 0.92, [0.12, 0.43]);
+      rivets(ctx, cam, x + 0.08, y + 0.08, x + 0.92, y + 0.92, 0.27, 4);
+      cylinder(ctx, cam, x + 0.27, y + 0.27, 0.55, 1.22, 0.12, C.ironDark);
+      cylinder(ctx, cam, x + 0.27, y + 0.27, 1.12, 1.24, 0.15, C.brass);
       furnaceMouth(ctx, cam, x, y, t, t.cd > 0 ? C.furnaceHot : '#2a1006');
-      raisedArrow(ctx, cam, cx + 0.12, cy + 0.12, 0.55, t.dir, 0.16, '#3b1607');
+      raisedArrow(ctx, cam, cx + 0.14, cy + 0.14, 0.55, t.dir, 0.15, C.ink);
       if (fx && t.cd > 0) {
-        // Smoke puffs
         for (let i = 0; i < 3; i++) {
           const ph = (time / 50 + i / 3) % 1;
-          const [sx, sy] = cam.project(x + 0.25 - ph * 0.15, y + 0.25 - ph * 0.15, 1.2 + ph * 0.7);
-          ctx.fillStyle = `rgba(160,160,170,${(0.45 * (1 - ph)).toFixed(3)})`;
+          const [sx, sy] = cam.project(x + 0.27 - ph * 0.15, y + 0.27 - ph * 0.15, 1.3 + ph * 0.7);
+          ctx.fillStyle = `rgba(200,190,175,${(0.5 * (1 - ph)).toFixed(3)})`;
           ctx.beginPath();
-          ctx.arc(sx, sy, cam.scale * (0.05 + 0.07 * ph), 0, Math.PI * 2);
+          ctx.arc(sx, sy, cam.scale * (0.05 + 0.08 * ph), 0, Math.PI * 2);
           ctx.fill();
         }
       }
       break;
     }
     case Building.Turret: {
-      // Round base, rotating head, barrel towards the last target.
-      cylinder(ctx, cam, cx, cy, 0, 0.24, 0.38, C.turretBase);
+      // Riveted iron drum base, brass dome head, copper barrel with brass muzzle ring.
+      cylinder(ctx, cam, cx, cy, 0, 0.24, 0.4, C.turretBase);
       const aim = aimOverride ?? turretAim.get(key(x, y)) ?? Math.PI / 4;
       const empty = t.ammo === 0;
-      const head = empty ? '#cdb98a' : C.turret;
-      const bx = cx + Math.cos(aim) * 0.48;
-      const by = cy + Math.sin(aim) * 0.48;
+      const head = empty ? '#a08a5a' : C.turret;
+      const bx = cx + Math.cos(aim) * 0.52;
+      const by = cy + Math.sin(aim) * 0.52;
       const barrelFront = Math.cos(aim) + Math.sin(aim) > 0;
       const barrel = () => {
-        const [ax, ay] = cam.project(cx, cy, 0.42);
-        const [ex, ey] = cam.project(bx, by, 0.44);
+        const [ax, ay] = cam.project(cx, cy, 0.4);
+        const [ex, ey] = cam.project(bx, by, 0.42);
         ctx.lineCap = 'round';
-        const bw = Math.max(2, cam.scale * 0.085);
+        const bw = Math.max(2, cam.scale * 0.09);
         ctx.strokeStyle = C.ink;
         ctx.lineWidth = bw + inkW(cam) * 2;
         ctx.beginPath();
         ctx.moveTo(ax, ay);
         ctx.lineTo(ex, ey);
         ctx.stroke();
-        ctx.strokeStyle = '#6b6580';
+        ctx.strokeStyle = C.copper;
         ctx.lineWidth = bw;
+        ctx.stroke();
+        // muzzle ring
+        ctx.fillStyle = C.brass;
+        ctx.strokeStyle = C.ink;
+        ctx.lineWidth = inkW(cam);
+        ctx.beginPath();
+        ctx.arc(ex, ey, bw * 0.75, 0, Math.PI * 2);
+        ctx.fill();
         ctx.stroke();
         ctx.lineCap = 'butt';
       };
       if (!barrelFront) barrel();
-      cylinder(ctx, cam, cx, cy, 0.24, 0.5, 0.24, head);
+      cylinder(ctx, cam, cx, cy, 0.24, 0.36, 0.27, head);
+      dome(ctx, cam, cx, cy, 0.36, 0.24, head);
       if (barrelFront) barrel();
       if (empty) {
         const [sx, sy] = cam.project(cx, cy, 0.5);
         ctx.strokeStyle = C.noAmmo;
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.ellipse(sx, sy, 0.24 * cam.scale * 0.707, 0.24 * cam.scale * 0.354, 0, 0, Math.PI * 2);
+        ctx.ellipse(sx, sy, 0.26 * cam.scale * 0.707, 0.26 * cam.scale * 0.354, 0, 0, Math.PI * 2);
         ctx.stroke();
       }
       break;
     }
   }
+}
+
+// ---------------- steampunk detail helpers ----------------
+
+/** Brass rivets along the top edge of the two visible faces of a box, at height z. */
+function rivets(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, y0: number, x1: number, y1: number, z: number, n: number): void {
+  const r = Math.max(1, cam.scale * 0.022);
+  ctx.fillStyle = C.brassHi;
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = Math.max(0.6, r * 0.5);
+  for (let i = 0; i < n; i++) {
+    const f = (i + 0.5) / n;
+    for (const [px, py] of [cam.project(x0 + (x1 - x0) * f, y1, z), cam.project(x1, y0 + (y1 - y0) * f, z)]) {
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+  }
+}
+
+/** Vertical plate seams on the visible faces. */
+function seams(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, y0: number, x1: number, y1: number, z: number): void {
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = Math.max(0.8, inkW(cam) * 0.6);
+  ctx.beginPath();
+  const mx = (x0 + x1) / 2;
+  const my = (y0 + y1) / 2;
+  for (const [a, b] of [
+    [cam.project(mx, y1, 0), cam.project(mx, y1, z * 2)],
+    [cam.project(x1, my, 0), cam.project(x1, my, z * 2)],
+  ]) {
+    ctx.moveTo(a[0], a[1]);
+    ctx.lineTo(b[0], b[1]);
+  }
+  ctx.stroke();
+}
+
+/** Horizontal metal bands around a box at the given heights. */
+function bands(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, y0: number, x1: number, y1: number, zs: number[]): void {
+  for (const z of zs) {
+    quad(ctx, cam, [[x0, y1, z], [x1, y1, z], [x1, y1, z + 0.05], [x0, y1, z + 0.05]], C.brass);
+    quad(ctx, cam, [[x1, y0, z], [x1, y1, z], [x1, y1, z + 0.05], [x1, y0, z + 0.05]], shade(C.brass, 0.86));
+  }
+}
+
+/** Plank lines on top of a wooden platform. */
+function planks(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, y0: number, x1: number, y1: number, z: number): void {
+  ctx.strokeStyle = 'rgba(42,29,20,0.45)';
+  ctx.lineWidth = Math.max(0.8, inkW(cam) * 0.6);
+  ctx.beginPath();
+  for (let i = 1; i < 4; i++) {
+    const f = x0 + ((x1 - x0) * i) / 4;
+    const [ax, ay] = cam.project(f, y0, z);
+    const [bx, by] = cam.project(f, y1, z);
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
+}
+
+/** Iron lattice tower: pyramid faces with X bracing. */
+function derrick(ctx: CanvasRenderingContext2D, cam: Proj, x0: number, y0: number, x1: number, y1: number, z0: number, apex: P3): void {
+  pyramid(ctx, cam, x0, y0, x1, y1, z0, apex, C.iron);
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = Math.max(0.8, inkW(cam) * 0.7);
+  ctx.beginPath();
+  const zm = z0 + (apex[2] - z0) * 0.45;
+  const ins = 0.45 * 0.5;
+  const pts: [P3, P3][] = [
+    [[x0, y1, z0], [x1 - (x1 - x0) * ins, y1 - (y1 - y0) * ins, zm]],
+    [[x1, y1, z0], [x0 + (x1 - x0) * ins, y1 - (y1 - y0) * ins, zm]],
+    [[x1, y0, z0], [x1 - (x1 - x0) * ins, y1 - (y1 - y0) * ins, zm]],
+    [[x1, y1, z0], [x1 - (x1 - x0) * ins, y0 + (y1 - y0) * ins, zm]],
+  ];
+  for (const [a, b] of pts) {
+    const [ax, ay] = cam.project(a[0], a[1], a[2]);
+    const [bx, by] = cam.project(b[0], b[1], b[2]);
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(bx, by);
+  }
+  ctx.stroke();
+}
+
+/** Upright gear facing the viewer (screen space). */
+function gear(ctx: CanvasRenderingContext2D, px: number, py: number, r: number, teeth: number, color: string, phase: number, ink: number): void {
+  ctx.fillStyle = color;
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = ink;
+  ctx.beginPath();
+  const n = teeth * 2;
+  for (let i = 0; i < n; i++) {
+    const a0 = phase + (i / n) * Math.PI * 2;
+    const a1 = phase + ((i + 1) / n) * Math.PI * 2;
+    const rr = i % 2 ? r * 0.78 : r;
+    ctx.lineTo(px + Math.cos(a0) * rr, py + Math.sin(a0) * rr);
+    ctx.lineTo(px + Math.cos(a1) * rr, py + Math.sin(a1) * rr);
+  }
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = C.ink;
+  ctx.beginPath();
+  ctx.arc(px, py, r * 0.25, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Half-dome cap on a cylinder top (screen-space ellipse arc). */
+function dome(ctx: CanvasRenderingContext2D, cam: Proj, cx: number, cy: number, z: number, r: number, color: string): void {
+  const [sx, sy] = cam.project(cx, cy, z);
+  const rx = r * cam.scale * 0.707;
+  const ry = r * cam.scale * 0.354;
+  const h = r * cam.scale * 0.55;
+  ctx.fillStyle = color;
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = inkW(cam);
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, rx, ry, 0, 0, Math.PI);
+  ctx.bezierCurveTo(sx - rx, sy - h * 1.2, sx + rx, sy - h * 1.2, sx + rx, sy);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.beginPath();
+  ctx.ellipse(sx - rx * 0.35, sy - h * 0.45, rx * 0.22, h * 0.18, -0.4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+/** Small pressure gauge (face + needle) at a point on a surface. */
+function gauge(ctx: CanvasRenderingContext2D, cam: Proj, x: number, y: number, z: number, time: number): void {
+  const [px, py] = cam.project(x, y, z);
+  const r = cam.scale * 0.08;
+  ctx.fillStyle = '#f3e3c0';
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = inkW(cam);
+  ctx.beginPath();
+  ctx.arc(px, py, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.stroke();
+  const a = -Math.PI * 0.75 + 0.4 * Math.sin(time / 40);
+  ctx.lineWidth = Math.max(0.8, r * 0.18);
+  ctx.strokeStyle = '#b3261e';
+  ctx.beginPath();
+  ctx.moveTo(px, py);
+  ctx.lineTo(px + Math.cos(a) * r * 0.75, py + Math.sin(a) * r * 0.75);
+  ctx.stroke();
 }
 
 /** Glowing furnace mouth on the face it outputs through (or the top edge if that face is hidden). */
@@ -632,7 +857,7 @@ function chute(ctx: CanvasRenderingContext2D, cam: Proj, cx: number, cy: number,
   const ay = cy + fy * 0.2;
   const bx = cx + fx * 0.5;
   const by = cy + fy * 0.5;
-  prism(ctx, cam, Math.min(ax, bx) - (fx ? 0 : w), Math.min(ay, by) - (fy ? 0 : w), Math.max(ax, bx) + (fx ? 0 : w), Math.max(ay, by) + (fy ? 0 : w), 0.12, 0.3, '#7a4a2a');
+  prism(ctx, cam, Math.min(ax, bx) - (fx ? 0 : w), Math.min(ay, by) - (fy ? 0 : w), Math.max(ax, bx) + (fx ? 0 : w), Math.max(ay, by) + (fy ? 0 : w), 0.12, 0.3, C.copper);
 }
 
 function drawEnemy(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: number, e: Enemy): void {
@@ -663,6 +888,33 @@ function drawEnemy(ctx: CanvasRenderingContext2D, cam: Camera, x: number, y: num
   ctx.beginPath();
   ctx.ellipse(bx - rx * 0.4, by - ry * 0.45, rx * 0.22, ry * 0.18, -0.5, 0, Math.PI * 2);
   ctx.fill();
+  // Clockwork: a brass wind-up key on its back that spins as it hops.
+  const ink = inkW(cam);
+  const kx0 = bx + rx * 0.15;
+  const ky0 = by - ry * 0.85;
+  const kh = s * 0.11;
+  const spin = Math.cos((x + y) * 3 + e.id);
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = Math.max(2, s * 0.03) + ink * 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(kx0, ky0);
+  ctx.lineTo(kx0, ky0 - kh);
+  ctx.stroke();
+  ctx.strokeStyle = C.brass;
+  ctx.lineWidth = Math.max(2, s * 0.03);
+  ctx.stroke();
+  ctx.lineCap = 'butt';
+  ctx.fillStyle = C.brass;
+  ctx.strokeStyle = C.ink;
+  ctx.lineWidth = ink;
+  const lw = s * 0.07 * Math.max(0.25, Math.abs(spin));
+  for (const side of [-1, 1]) {
+    ctx.beginPath();
+    ctx.ellipse(kx0 + side * lw, ky0 - kh, lw, s * 0.045, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+  }
   // Eyes looking where it's heading (screen space)
   const [hx, hy] = cam.project(x + (e.x - e.prevX) * 30, y + (e.y - e.prevY) * 30, 0);
   const look = Math.atan2(hy - gy, hx - gx);
@@ -897,7 +1149,7 @@ function drawShadows(ctx: CanvasRenderingContext2D, world: World, cam: Camera, v
   const sx = Math.cos(ang) * len;
   const sy = Math.sin(ang) * len;
 
-  ctx.fillStyle = `rgba(30,50,30,${(0.24 * light).toFixed(3)})`;
+  ctx.fillStyle = `rgba(40,28,14,${(0.26 * light).toFixed(3)})`;
   ctx.beginPath();
   for (const [k, tile] of world.grid.tiles) {
     if (isBelt(tile.b) || !inView(k, v)) continue;
@@ -963,7 +1215,7 @@ function drawLighting(
   dctx.setTransform(ms, 0, 0, ms, 0, 0);
   dctx.globalCompositeOperation = 'source-over';
   dctx.clearRect(0, 0, cssW, cssH);
-  dctx.fillStyle = `rgba(24,22,70,${(0.72 * dark).toFixed(3)})`;
+  dctx.fillStyle = `rgba(22,16,34,${(0.74 * dark).toFixed(3)})`;
   dctx.fillRect(0, 0, cssW, cssH);
 
   const lights: { x: number; y: number; r: number; color: string | null }[] = [];
@@ -975,7 +1227,7 @@ function drawLighting(
     const y = ky(k) + 0.5;
     switch (t.b) {
       case Building.Core:
-        lights.push({ x, y, r: 4.8, color: 'rgba(79,179,255,0.10)' });
+        lights.push({ x, y, r: 4.8, color: 'rgba(111,224,192,0.10)' });
         break;
       case Building.Turret:
         if (t.ammo > 0) lights.push({ x, y, r: 2.4, color: null });
@@ -1011,7 +1263,7 @@ function drawLighting(
     const x = kx(k);
     const y = ky(k);
     const [u, w] = cam.viewTile(x, y);
-    furnaceMouth(ctx, cam.view, u, w, { ...t, dir: cam.viewDir(t.dir) }, C.furnaceHot);
+    furnaceMouth(ctx, localProj(cam, x, y, u, w), u, w, { ...t, dir: cam.viewDir(t.dir) }, C.furnaceHot);
   }
   ctx.fillStyle = '#ffe066';
   const eye = Math.max(1.5, cam.scale * 0.03);
@@ -1086,10 +1338,10 @@ export function drawToolIcon(canvas: HTMLCanvasElement, tool: Exclude<Tool, 'sel
 
   // Ground tile
   cam.applyGround(ctx, dpr);
-  ctx.fillStyle = tool === 'miner' ? C.oreGround : C.landAlt;
+  ctx.fillStyle = tool === 'miner' ? T.oreGround : T.landAlt;
   ctx.fillRect(0, 0, 1, 1);
   if (tool === 'miner') {
-    ctx.fillStyle = C.ore;
+    ctx.fillStyle = T.ore;
     for (const [ox, oy] of [[0.2, 0.25], [0.75, 0.3], [0.3, 0.8], [0.8, 0.75]]) {
       ctx.beginPath();
       ctx.arc(ox, oy, 0.08, 0, Math.PI * 2);
@@ -1097,19 +1349,9 @@ export function drawToolIcon(canvas: HTMLCanvasElement, tool: Exclude<Tool, 'sel
     }
   }
   if (isBelt(b)) {
-    const fast = b === Building.FastBelt;
-    ctx.fillStyle = fast ? C.fastBelt : C.belt;
-    ctx.fillRect(0.1, 0.1, 0.8, 0.8);
-    if (fast) {
-      ctx.fillStyle = C.fastBeltRail;
-      ctx.fillRect(0.1, 0.1, 0.8, 0.08);
-      ctx.fillRect(0.1, 0.82, 0.8, 0.08);
-    }
-    for (const sOff of [-0.22, 0.18]) groundArrow(ctx, 0.5 + sOff, 0.5, 0, 0.17, fast ? C.fastBeltMark : C.beltMark);
-    ctx.fillStyle = C.iron;
-    ctx.beginPath();
-    ctx.arc(0.72, 0.5, 0.12, 0, Math.PI * 2);
-    ctx.fill();
+    const ink = 2.2 / cam.scale;
+    paintBelt(ctx, 0, 0, b, 0, 0.3, ink);
+    paintItem(ctx, 0.7, 0.5, Item.Iron, ink);
     return;
   }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);

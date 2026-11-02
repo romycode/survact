@@ -177,8 +177,10 @@ let last = performance.now();
 
 function frame(now: number): void {
   const speed = paused ? 0 : ui.speed;
-  acc += Math.min((now - last) / 1000, 0.25) * speed;
+  const frameDt = Math.min((now - last) / 1000, 0.25);
+  acc += frameDt * speed;
   last = now;
+  cam.update(frameDt);
   while (acc >= DT) {
     for (const cmd of pending) world.apply(cmd);
     pending.length = 0;

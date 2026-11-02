@@ -8,8 +8,7 @@ Factory + tower defense en tiempo continuo, en un mundo infinito. HTML canvas + 
 - **Transporte mejorable.** Cinta (2 tiles/s) y **cinta rápida** (5 tiles/s, 2 Fe + 1 placa). Una cinta lleva un item por tile, así que velocidad = caudal: 4 mineros saturan una cinta normal. La rápida se pone encima de la normal y la mejora en el sitio (cobra la diferencia, mantiene dirección y carga).
 - Las torretas disparan munición que les llega por cinta: hierro (4 disparos) o placas (10).
 - **Agua** bloquea construcción y enemigos.
-- **Estilo cartoon.** Paleta saturada (césped, agua turquesa con espuma, orillas de arena), contornos de tinta en todo lo elevado, sombreado plano a dos tonos y brillos. Enemigos = slimes que saltan y miran hacia donde van. UI de "pegatinas": papel crema, borde de tinta, sombra dura que se hunde al pulsar, tipografía Fredoka.
-- **Siluetas propias** para leer la base de un vistazo (y en los iconos del dock, que usan el mismo render): núcleo = gema flotante sobre pedestal · muro = almenas · minero = torre piramidal con polea y tolva de salida · horno = chimenea con humo y boca incandescente en la cara de salida · torreta = cabeza giratoria con cañón que apunta al último objetivo.
+- **Estilo cartoon steampunk industrial.** Latón, cobre, hierro remachado y madera aceitada sobre un suelo de musgo con guijarros y algún engranaje perdido; agua verdosa con orillas de tierra. Contornos de tinta sepia. Núcleo = caldera de cobre con cúpula de latón, manómetro y un cristal de éter flotante · muro = baluarte de hierro remachado con remate de latón · minero = torre de perforación con arriostrado y engranaje que gira al trabajar · horno = caldera de cobre con chimenea de hierro y humo · torreta = cúpula de latón con cañón de cobre · enemigos = bichos de cuerda con su llave de latón. UI: placas de hierro con marco de latón y remaches, botones-válvula de latón, rótulos en Alfa Slab One.
 - Solo puedes construir a 6 tiles de algo tuyo (zona clara). Los enemigos aparecen más allá de tu edificio más lejano; durante la construcción se ven el punto de spawn y la ruta prevista.
 - **Día y noche.** Ciclo de 4 min (≈90 s de noche). De noche los enemigos van un 30% más rápidos y solo se ve lo iluminado: núcleo, torretas con munición, hornos encendidos y mineros. De día las sombras giran con el sol. El ciclo sale del tick de la simulación: la pausa lo para.
 - **Tiempo continuo.** La fábrica produce siempre y se construye en cualquier momento. Las oleadas llegan con cuenta atrás (60 s la primera, 40 s desde que sale el último enemigo de la anterior); si vas lento, se solapan. "Llamar ya" adelanta la siguiente. `P` pausa.
@@ -35,8 +34,7 @@ Construcción por **planos**: lo que tocas o arrastras queda como fantasma (azul
 - Cinta/Rápida/Muro/Quitar: arrastrar traza una **L limpia** desde donde empezaste; las cintas salen con dirección y esquina.
 - Minero/Horno/Torreta: tocar = plano; tocar el plano otra vez lo gira (o lo quita si no tiene dirección).
 - Teclado: `1`–`6` herramientas · `X` quitar · `Q` soltar · `E` girar · `C` centrar · `Espacio` llamar oleada · `P` pausa · `F` velocidad · `WASD` cámara.
-- Dos dedos: zoom + mover; **girarlos** rota la vista 90° · rueda + botón central.
-- **Rotar vista:** botón ⟳, `V` / `.` (horario) y `,` (antihorario). Los edificios se dibujan en espacio de vista, así que siempre se ven sus caras frontales.
+- **Girar la cámara arrastrando:** con dos dedos (además de zoom y mover) o con el botón derecho del ratón. Gira en continuo mientras arrastras y al soltar se asienta en la vista isométrica más cercana (el arte tiene 4 vistas; el suelo gira suave y los edificios cambian de cara a los 45°). Teclado: `.`/`V` y `,`.
 
 ## HTML dentro del canvas
 

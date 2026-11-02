@@ -52,23 +52,23 @@ const REPAINT_BUDGET = 6;
 export const BANK = 0.28;
 
 export const T = {
-  ink: '#2b2340',
-  land: '#8fd16a',
-  landAlt: '#86c962',
-  grid: 'rgba(43,35,64,0.07)',
-  tuft: '#5ea84a',
-  flowerA: '#fff4d6',
-  flowerB: '#ffd34d',
-  flowerCore: '#ff9f43',
-  bank: '#e8c27f',
-  bankDark: '#c99a5a',
-  water: '#46c2e0',
-  waterLight: '#7fdcf0',
-  foam: '#e9fbff',
-  ore: '#7a5235',
-  oreHi: '#c08a5a',
-  oreGround: '#d4a46a',
-};
+  ink: '#2a1d14',
+  land: '#9fae5c',
+  landAlt: '#97a656',
+  grid: 'rgba(42,29,20,0.08)',
+  tuft: '#6d7d36',
+  pebble: '#8f8270',
+  pebbleHi: '#b8ab95',
+  cog: '#b08a3e',
+  bank: '#a07e5e',
+  bankDark: '#7d5f46',
+  water: '#4a9a96',
+  waterLight: '#7cc2b8',
+  foam: '#e3edd6',
+  ore: '#4d4b52',
+  oreHi: '#b4683e',
+  oreGround: '#86614a',
+}
 
 /** Nuggets drawn for a given amount of ore (0 = depleted / none). */
 export function oreNuggets(left: number): number {
@@ -133,7 +133,7 @@ export function paintTerrain(
         if (r > 0.3) continue;
         const [ox, oy] = rotLocal(rot, 0.2 + hash2(wx, wy, 2) * 0.6, 0.2 + hash2(wx, wy, 3) * 0.6);
         if (r < 0.06) {
-          flowers.push([x + ox, y + oy, r < 0.03]);
+          flowers.push([x + ox, y + oy, r < 0.012]);
         } else {
           for (const [dx, dy] of [[-0.09, 0.02], [0, 0], [0.02, -0.09]]) {
             ctx.moveTo(x + ox + dx, y + oy + dy);
@@ -144,15 +144,38 @@ export function paintTerrain(
     }
     ctx.stroke();
     ctx.lineCap = 'butt';
-    for (const [fx, fy, white] of flowers) {
-      ctx.fillStyle = white ? T.flowerA : T.flowerB;
-      ctx.beginPath();
-      ctx.arc(fx, fy, 0.07, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.fillStyle = T.flowerCore;
-      ctx.beginPath();
-      ctx.arc(fx, fy, 0.03, 0, Math.PI * 2);
-      ctx.fill();
+    // Pebbles, and now and then a lost brass cog.
+    for (const [fx, fy, cog] of flowers) {
+      if (cog) {
+        ctx.fillStyle = T.cog;
+        ctx.strokeStyle = T.ink;
+        ctx.lineWidth = 1.2 * gpx;
+        ctx.beginPath();
+        for (let i = 0; i < 16; i++) {
+          const a = (i / 16) * Math.PI * 2;
+          const r = i % 2 ? 0.09 : 0.065;
+          const px = fx + Math.cos(a) * r;
+          const py = fy + Math.sin(a) * r;
+          if (i === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = T.ink;
+        ctx.beginPath();
+        ctx.arc(fx, fy, 0.025, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = T.pebble;
+        ctx.beginPath();
+        ctx.ellipse(fx, fy, 0.07, 0.05, 0.6, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = T.pebbleHi;
+        ctx.beginPath();
+        ctx.arc(fx - 0.02, fy - 0.02, 0.025, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
@@ -311,8 +334,12 @@ export class TerrainCache {
     const settled = this.stillFrames >= SETTLE_FRAMES;
     let budget = REPAINT_BUDGET;
 
-    // Chunks live in VIEW space: each one is a screen-aligned diamond.
-    const v = cam.visibleView();
+    // Chunks live in K-VIEW space (the nearest quarter turn): screen-aligned
+    // diamonds. Mid-drag, the whole layer is drawn through the affine that
+    // turns the K-view ground into the real one.
+    const v = cam.visibleViewK();
+    const turning = cam.frac !== 0;
+    const [ma, mb, mc, md, me, mf] = cam.kToScreen();
     const cx0 = Math.floor(v.x0 / CHUNK);
     const cy0 = Math.floor(v.y0 / CHUNK);
     const cx1 = Math.floor(v.x1 / CHUNK);
@@ -323,18 +350,18 @@ export class TerrainCache {
     let drawn = 0;
     let painted = 0;
 
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.setTransform(ma, mb, mc, md, me * dpr, mf * dpr);
     // Back to front so a chunk's bank overflow lands under its southern neighbour.
     for (let s = cx0 + cy0; s <= cx1 + cy1; s++) {
       for (let cx = cx0; cx <= cx1; cx++) {
         const cy = s - cx;
         if (cy < cy0 || cy > cy1) continue;
         // Screen bbox of the chunk diamond (device px), culled against the screen.
-        const [tx, ty] = cam.projectView(cx * CHUNK, cy * CHUNK, 0);
+        const [tx, ty] = cam.projectKFlat(cx * CHUNK, cy * CHUNK, 0);
         const half = CHUNK * dev * 0.5;
         const left = tx * dpr - half;
         const top = ty * dpr;
-        if (left > W || left + 2 * half < 0 || top > H || top + half + dev < 0) continue;
+        if (!turning && (left > W || left + 2 * half < 0 || top > H || top + half + dev < 0)) continue;
 
         const id = cx * 65536 + cy;
         let c = this.chunks.get(id);
@@ -352,7 +379,7 @@ export class TerrainCache {
         const k = dev / c.scale;
         const dx = tx * dpr - (c.pad + (CHUNK * c.scale) / 2) * k;
         const dy = ty * dpr - c.pad * k;
-        if (k === 1) {
+        if (k === 1 && !turning) {
           // 1:1 on whole pixels: no resampling.
           ctx.drawImage(c.image, Math.round(dx), Math.round(dy));
         } else {
@@ -361,6 +388,7 @@ export class TerrainCache {
         drawn++;
       }
     }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     this.evict(W * H * 3);
     this.stats = { drawn, painted, cached: this.chunks.size };
     return true;

@@ -22,8 +22,13 @@ export class Camera implements Proj {
   /** World point at the centre of the screen. */
   cx = 0.5;
   cy = 0.5;
-  /** View rotation in quarter turns (0..3). */
-  rot = 0;
+  /**
+   * Continuous view rotation, in quarter turns. Drags move it freely; when
+   * released it eases to the nearest whole quarter (the art has 4 views).
+   */
+  angle = 0;
+  /** True while a finger/mouse is turning the view (no easing). */
+  turning = false;
   private cssW = 0;
   private cssH = 0;
   private sized = false;
@@ -45,9 +50,38 @@ export class Camera implements Proj {
   }
 
   // ---------------- rotation helpers ----------------
+  // "View" = rotated by the continuous angle. "K-view" = rotated by the
+  // nearest quarter turn `rot`: that's the space the art and terrain chunks
+  // are drawn in. With no drag in progress both are the same.
+
+  /** Nearest quarter turn (0..3): which of the 4 drawn views to use. */
+  get rot(): number {
+    return ((Math.round(this.angle) % 4) + 4) % 4;
+  }
+
+  /** Leftover rotation beyond `rot`, in quarter turns (−0.5..0.5). */
+  get frac(): number {
+    return this.angle - Math.round(this.angle);
+  }
 
   /** World point -> view point (continuous). */
   toView(x: number, y: number): [number, number] {
+    const a = this.angle * (Math.PI / 2);
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    return [c * x - s * y, s * x + c * y];
+  }
+
+  /** View point -> world point (continuous). */
+  fromView(u: number, v: number): [number, number] {
+    const a = this.angle * (Math.PI / 2);
+    const c = Math.cos(a);
+    const s = Math.sin(a);
+    return [c * u + s * v, -s * u + c * v];
+  }
+
+  /** World point -> K-view point. */
+  toViewK(x: number, y: number): [number, number] {
     switch (this.rot) {
       case 1:
         return [-y, x];
@@ -60,8 +94,8 @@ export class Camera implements Proj {
     }
   }
 
-  /** View point -> world point (continuous). */
-  fromView(u: number, v: number): [number, number] {
+  /** K-view point -> world point. */
+  fromViewK(u: number, v: number): [number, number] {
     switch (this.rot) {
       case 1:
         return [v, -u];
@@ -72,6 +106,108 @@ export class Camera implements Proj {
       default:
         return [u, v];
     }
+  }
+
+  /** Turn by `quarters` (drag delta). */
+  turnBy(quarters: number): void {
+    this.angle += quarters;
+  }
+
+  /** Ease towards the nearest quarter when not being dragged. Call once per frame. */
+  update(dt: number): void {
+    if (this.turning) return;
+    const target = Math.round(this.angle);
+    const d = target - this.angle;
+    if (d === 0) return;
+    const step = Math.min(Math.abs(d), Math.max(0.02, Math.abs(d) * Math.min(1, dt * 14)));
+    this.angle = Math.abs(d) <= step ? target : this.angle + Math.sign(d) * step;
+    if (Math.abs(target - this.angle) < 1e-4) this.angle = target;
+  }
+
+  /**
+   * Affine map (CSS px) from the K-view screen to the real screen:
+   * screen = C + I·R(frac)·I⁻¹·(kScreen − C), with I the iso matrix.
+   * Identity when not mid-turn. Returned as [a, b, c, d, e, f].
+   */
+  kToScreen(): [number, number, number, number, number, number] {
+    const f = this.frac;
+    if (f === 0) return [1, 0, 0, 1, 0, 0];
+    const p = f * (Math.PI / 2);
+    const co = Math.cos(p);
+    const si = Math.sin(p);
+    // I = [[1/2, -1/2], [1/4, 1/4]] (×s cancels out in I·R·I⁻¹)
+    // I⁻¹ = [[1, 2], [-1, 2]]
+    const r00 = co, r01 = -si, r10 = si, r11 = co;
+    // R·I⁻¹
+    const m00 = r00 * 1 + r01 * -1;
+    const m01 = r00 * 2 + r01 * 2;
+    const m10 = r10 * 1 + r11 * -1;
+    const m11 = r10 * 2 + r11 * 2;
+    // I·(R·I⁻¹)
+    const a = 0.5 * m00 - 0.5 * m10;
+    const c = 0.5 * m01 - 0.5 * m11;
+    const b = 0.25 * m00 + 0.25 * m10;
+    const d = 0.25 * m01 + 0.25 * m11;
+    const cx = this.cssW / 2;
+    const cy = this.cssH / 2;
+    return [a, b, c, d, cx - (a * cx + c * cy), cy - (b * cx + d * cy)];
+  }
+
+  /** K-view point -> real screen (CSS px). Same as project() on the world point. */
+  projectK(u: number, v: number, z = 0): [number, number] {
+    const [x, y] = this.fromViewK(u, v);
+    return this.project(x, y, z);
+  }
+
+  /** K-view point -> K-view screen (before the mid-turn affine). */
+  projectKFlat(u: number, v: number, z = 0): [number, number] {
+    const [uc, vc] = this.toViewK(this.cx, this.cy);
+    const s = this.scale;
+    return [this.cssW / 2 + (u - uc - (v - vc)) * (s / 2), this.cssH / 2 + (u - uc + (v - vc)) * (s / 4) - z * (s / 2)];
+  }
+
+  /** Real screen (CSS px) -> K-view point on the ground. */
+  toViewKPoint(sx: number, sy: number): [number, number] {
+    const [x, y] = this.toWorld(sx, sy);
+    return this.toViewK(x, y);
+  }
+
+  /** K-view-tile range covering the screen (inclusive), padded. */
+  visibleViewK(): { x0: number; y0: number; x1: number; y1: number } {
+    const pts = [
+      this.toViewKPoint(0, 0),
+      this.toViewKPoint(this.cssW, 0),
+      this.toViewKPoint(0, this.cssH),
+      this.toViewKPoint(this.cssW, this.cssH),
+    ];
+    const us = pts.map((p) => p[0]);
+    const vs = pts.map((p) => p[1]);
+    const m = this.frac === 0 ? 0 : 2;
+    return {
+      x0: Math.floor(Math.min(...us)) - 1 - m,
+      y0: Math.floor(Math.min(...vs)) - 1 - m,
+      x1: Math.ceil(Math.max(...us)) + 2 + m,
+      y1: Math.ceil(Math.max(...vs)) + 2 + m,
+    };
+  }
+
+  /** Ground transform in K-view coords, including the mid-turn affine. */
+  applyGroundViewK(ctx: CanvasRenderingContext2D, dpr: number): void {
+    const s = this.scale;
+    const [uc, vc] = this.toViewK(this.cx, this.cy);
+    // K-view iso: kx = W/2 + (u-uc-(v-vc))s/2, ky = H/2 + (u-uc+(v-vc))s/4
+    const ia = s / 2, ib = s / 4, ic = -s / 2, id = s / 4;
+    const ie = this.cssW / 2 - (uc - vc) * (s / 2);
+    const iff = this.cssH / 2 - (uc + vc) * (s / 4);
+    const [a, b, c, d, e, f] = this.kToScreen();
+    ctx.setTransform(
+      dpr * (a * ia + c * ib),
+      dpr * (b * ia + d * ib),
+      dpr * (a * ic + c * id),
+      dpr * (b * ic + d * id),
+      dpr * (a * ie + c * iff + e),
+      dpr * (b * ie + d * iff + f),
+    );
   }
 
   /** World tile -> the view tile it occupies (min corner of the rotated square). */
@@ -102,14 +238,14 @@ export class Camera implements Proj {
     }
   }
 
-  /** World direction (0=E 1=S 2=W 3=N) as seen in view space. */
+  /** World direction (0=E 1=S 2=W 3=N) as seen in K-view space. */
   viewDir(d: number): number {
     return (d + this.rot) & 3;
   }
 
-  /** Rotate the view a quarter turn around the screen centre (+1 = clockwise on screen). */
+  /** Snap-rotate a quarter turn (keyboard). +1 = clockwise on screen. */
   rotate(step: 1 | -1): void {
-    this.rot = (this.rot + (step === 1 ? 3 : 1)) & 3;
+    this.angle = Math.round(this.angle) - step;
   }
 
   // ---------------- projection ----------------
