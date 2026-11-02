@@ -38,12 +38,10 @@ import {
   lerp,
   lightSources,
   mouthRect,
-  paintBelt,
   paintItem,
   paintMite,
   reachSet,
   routeKeys,
-  shadowHex,
   smokePuff,
   sunVector,
   updateAims,
@@ -51,11 +49,12 @@ import {
   type View,
 } from './render';
 import { projAt } from './camera';
-import { BELT_TICKS, BUILDINGS, Building, DIR_X, DIR_Y, Item, TURRET, isBelt } from './sim/defs';
+import { BELT_TICKS, BUILDINGS, Building, Item, TURRET, isBelt } from './sim/defs';
 import { key, kx, ky, type Tile } from './sim/grid';
-import { Ground } from './sim/terrain';
 import type { World } from './sim/world';
-import { CHUNK, T, oreNuggets, paintTerrain } from './terrainLayer';
+import { GLTerrain } from './glTerrain';
+import { CORE_PHASES, GLStatic, ID, type Sprite } from './glStatic';
+import { Shape, beltLooks, beltPoint, itemU } from './belts';
 
 type Ctx2D = CanvasRenderingContext2D;
 type RGBA = [number, number, number, number];
@@ -175,18 +174,6 @@ const fade = (a: number): RGBA => [a, a, a, a];
 
 // ---------------------------------------------------------------- atlas
 
-/** A sprite, with its placement relative to its anchor in tile units (× scale on screen). */
-interface Sprite {
-  u0: number;
-  v0: number;
-  u1: number;
-  v1: number;
-  dx: number;
-  dy: number;
-  w: number;
-  h: number;
-}
-
 interface Job {
   id: number;
   /** px at the bake level */
@@ -204,28 +191,11 @@ interface Job {
 
 /** Sprite resolution levels (device px per tile). Mipmaps cover everything below. */
 const SPRITE_LEVELS = [48, 96, 144];
-const TERRAIN_LEVELS = [32, 48, 64, 96, 128];
 const levelFor = (levels: number[], dev: number) => levels.find((l) => l >= dev * 0.8) ?? levels[levels.length - 1];
 
-// Sprite ids
-const ID = {
-  building: (b: number, dir: number, variant: number) => b * 1000 + dir * 100 + variant,
-  mite: (hq: number, sq: number, lq: number) => 10000 + hq * 100 + sq * 10 + lq,
-  belt: (b: number, dir: number, ph: number) => 20000 + b * 100 + dir * 10 + ph,
-  item: (it: number) => 30000 + it,
-  white: 40000,
-  dot: 40001,
-  edge: 40002,
-  edgeSel: 40003,
-  cross: 40004,
-  arrow: (d: number) => 40010 + d,
-};
-
-const BELT_PHASES = 8;
 const MITE_HOP = 4;
 const MITE_SPIN = 2;
 const MITE_LOOK = 8;
-const CORE_PHASES = 8;
 const PAD = 0.14;
 /** Tallest point of each building's silhouette above the ground, in tile heights. */
 const TOP: Partial<Record<Building, number>> = {
@@ -310,11 +280,6 @@ function spriteJobs(S: number, dpr: number): Job[] {
       },
     });
   };
-  for (const b of [Building.Belt, Building.FastBelt]) {
-    for (let d = 0; d < 4; d++) {
-      for (let ph = 0; ph < BELT_PHASES; ph++) ground(ID.belt(b, d, ph), 1, (g) => paintBelt(g, 0, 0, b, d, ph / BELT_PHASES, 1.6 * 2 * gpx));
-    }
-  }
   for (const it of [Item.Iron, Item.Plate]) ground(ID.item(it), 0.4, (g) => paintItem(g, 0.2, 0.2, it, 1.6 * 2 * gpx));
   ground(ID.edge, 1, (g) => {
     g.strokeStyle = '#fff';
@@ -480,169 +445,6 @@ class AtlasBuild {
   }
 }
 
-// ---------------------------------------------------------------- terrain
-
-interface GLChunk {
-  tex: WebGLTexture;
-  L: number;
-  w: number;
-  h: number;
-  pad: number;
-  ore: [number, number][];
-  oreSig: number;
-  used: number;
-}
-
-/**
- * Terrain chunks (CHUNK×CHUNK tiles) painted with paintTerrain into a CPU
- * canvas at a fixed level, uploaded once, mipmapped. Painting is spread over
- * frames with a time budget; a chunk not painted yet shows as flat grass.
- */
-class GLTerrain {
-  private readonly chunks = new Map<number, GLChunk>();
-  private world: World | null = null;
-  private frame = 0;
-  private scratch = new Map<string, { c: Surface; g: Ctx2D }>();
-  stats = { drawn: 0, painted: 0, cached: 0, level: 0 };
-  private readonly gl: WebGL2RenderingContext;
-
-  constructor(gl: WebGL2RenderingContext) {
-    this.gl = gl;
-  }
-
-  /** Visible chunks for this frame, painting what's missing within the budget. */
-  prepare(world: World, cam: Camera, L: number, dpr: number, budgetMs: number): { id: number; cx: number; cy: number; c: GLChunk | undefined }[] {
-    if (world !== this.world) {
-      this.clear();
-      this.world = world;
-    }
-    this.frame++;
-    const v = cam.visible();
-    const cx0 = Math.floor(v.x0 / CHUNK);
-    const cy0 = Math.floor(v.y0 / CHUNK);
-    const cx1 = Math.floor(v.x1 / CHUNK);
-    const cy1 = Math.floor(v.y1 / CHUNK);
-    const first = this.chunks.size === 0;
-    const t0 = performance.now();
-    const out: { id: number; cx: number; cy: number; c: GLChunk | undefined }[] = [];
-    const later: [number, number, number][] = [];
-    let painted = 0;
-    const checkSig = this.frame % 12 === 0;
-    for (let cy = cy0; cy <= cy1; cy++) {
-      for (let cx = cx0; cx <= cx1; cx++) {
-        const id = cx * 65536 + cy;
-        let c = this.chunks.get(id);
-        const dirty = !!c && checkSig && c.ore.length > 0 && this.oreSig(world, c.ore) !== c.oreSig;
-        // Missing chunks paint first (always at least one per frame, all of them on the very first frame).
-        if (!c || dirty) {
-          if (first || painted === 0 || performance.now() - t0 < budgetMs) {
-            c = this.paint(world, cx, cy, L, dpr, c);
-            painted++;
-          }
-        } else if (c.L !== L) {
-          later.push([id, cx, cy]);
-        }
-        if (c) c.used = this.frame;
-        out.push({ id, cx, cy, c });
-      }
-    }
-    // Level changed: re-paint in place while there's budget, the old one keeps drawing meanwhile.
-    for (const [id, cx, cy] of later) {
-      if (performance.now() - t0 >= budgetMs) break;
-      const c = this.paint(world, cx, cy, L, dpr, this.chunks.get(id));
-      painted++;
-      const o = out.find((e) => e.id === id);
-      if (o) o.c = c;
-    }
-    // Idle: pre-paint the ring around the screen so panning doesn't show flat grass.
-    if (later.length === 0) {
-      for (let cy = cy0 - 1; cy <= cy1 + 1 && performance.now() - t0 < budgetMs * 0.5; cy++) {
-        for (let cx = cx0 - 1; cx <= cx1 + 1 && performance.now() - t0 < budgetMs * 0.5; cx++) {
-          const id = cx * 65536 + cy;
-          if (!this.chunks.has(id)) {
-            const c = this.paint(world, cx, cy, L, dpr);
-            c.used = this.frame;
-            painted++;
-          }
-        }
-      }
-    }
-    this.evict(Math.max(24, out.length * 3));
-    this.stats = { drawn: out.length, painted, cached: this.chunks.size, level: L };
-    return out;
-  }
-
-  private oreSig(world: World, ore: [number, number][]): number {
-    let s = 0;
-    for (const [x, y] of ore) s = (s * 31 + oreNuggets(world.oreLeft(x, y))) | 0;
-    return s;
-  }
-
-  private paint(world: World, cx: number, cy: number, L: number, dpr: number, prev?: GLChunk): GLChunk {
-    const gl = this.gl;
-    const pad = Math.ceil(L * 0.25);
-    const w = Math.ceil(CHUNK * L + 2 * pad);
-    const h = Math.ceil(CHUNK * L * DEPTH + 2 * pad);
-    const sk = `${w}x${h}`;
-    let s = this.scratch.get(sk);
-    if (!s) {
-      s = cpuCanvas(w, h);
-      this.scratch.set(sk, s);
-    }
-    const g = s.g;
-    const x0 = cx * CHUNK;
-    const y0 = cy * CHUNK;
-    g.setTransform(1, 0, 0, 1, 0, 0);
-    g.clearRect(0, 0, w, h);
-    g.setTransform(L, 0, 0, L * DEPTH, pad - x0 * L, pad - y0 * L * DEPTH);
-    paintTerrain(g, world, x0, y0, x0 + CHUNK - 1, y0 + CHUNK - 1, L / dpr);
-
-    let tex = prev && prev.w === w && prev.h === h ? prev.tex : null;
-    if (prev && !tex) gl.deleteTexture(prev.tex);
-    if (!tex) {
-      tex = gl.createTexture()!;
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texStorage2D(gl.TEXTURE_2D, 3, gl.RGBA8, w, h);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 2);
-    }
-    gl.bindTexture(gl.TEXTURE_2D, tex);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
-    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, gl.RGBA, gl.UNSIGNED_BYTE, s.c as TexImageSource);
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
-    gl.generateMipmap(gl.TEXTURE_2D);
-
-    let ore = prev?.ore;
-    if (!ore) {
-      ore = [];
-      for (let y = y0; y < y0 + CHUNK; y++) {
-        for (let x = x0; x < x0 + CHUNK; x++) if (world.terrain.at(x, y) === Ground.Ore) ore.push([x, y]);
-      }
-    }
-    const c: GLChunk = { tex, L, w, h, pad, ore, oreSig: this.oreSig(world, ore), used: this.frame };
-    this.chunks.set(cx * 65536 + cy, c);
-    return c;
-  }
-
-  private evict(max: number): void {
-    if (this.chunks.size <= max) return;
-    const byAge = [...this.chunks].sort((a, b) => a[1].used - b[1].used);
-    for (const [id, c] of byAge) {
-      if (this.chunks.size <= max || c.used === this.frame) break;
-      this.gl.deleteTexture(c.tex);
-      this.chunks.delete(id);
-    }
-  }
-
-  clear(): void {
-    for (const c of this.chunks.values()) this.gl.deleteTexture(c.tex);
-    this.chunks.clear();
-  }
-}
-
 // ---------------------------------------------------------------- batch
 
 const FLOATS = 17;
@@ -706,6 +508,7 @@ export class GLRenderer {
   private atlas: AtlasBuild;
   private next: AtlasBuild | null = null;
   private readonly terrain: GLTerrain;
+  private readonly statics: GLStatic;
   private readonly glowTex: WebGLTexture;
   private lightFbo: WebGLFramebuffer | null = null;
   private lightTex: WebGLTexture | null = null;
@@ -717,7 +520,6 @@ export class GLRenderer {
   private dpr = 1;
   private lastDev = 0;
   private still = 0;
-  private shadowTris = new Float32Array(6 * 2 * 4 * 512);
 
   constructor(gl: WebGL2RenderingContext, dpr: number, initialDev: number) {
     this.gl = gl;
@@ -779,6 +581,8 @@ export class GLRenderer {
     this.atlas.step(Infinity);
     this.atlasWant = levelFor(SPRITE_LEVELS, initialDev);
     this.terrain = new GLTerrain(gl);
+    this.statics = new GLStatic(gl, cornerBuf);
+    this.statics.setAtlas(this.atlas.map);
     this.glowTex = this.makeGlow();
   }
 
@@ -832,8 +636,8 @@ export class GLRenderer {
       this.atlas.dispose();
       this.atlas = this.next;
       this.next = null;
+      this.statics.setAtlas(this.atlas.map);
     }
-    if (settled || this.terrainL === 0) this.terrainL = levelFor(TERRAIN_LEVELS, dev);
 
     const bg = parse(C.bg);
     gl.clearColor(bg[0], bg[1], bg[2], 1);
@@ -843,10 +647,13 @@ export class GLRenderer {
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     const v = cam.visible();
+    updateAims(world);
+    this.statics.sync(world);
+    this.statics.updateState(world.tickCount);
     this.drawTerrain(world, cam);
     this.ground(world, ui, v);
     this.flush(this.atlas.tex);
-    this.shadows(world, cam, v);
+    this.shadows(world);
     this.raised(world, ui, alpha, v);
     this.flush(this.atlas.tex);
     this.lighting(world, alpha, v);
@@ -854,7 +661,6 @@ export class GLRenderer {
     this.flush(this.atlas.tex);
   }
 
-  private terrainL = 0;
   private atlasWant = 0;
 
   // ------------------------------------------------------------ helpers
@@ -898,20 +704,7 @@ export class GLRenderer {
   // ------------------------------------------------------------ passes
 
   private drawTerrain(world: World, cam: Camera): void {
-    const list = this.terrain.prepare(world, cam, this.terrainL, this.dpr, 5);
-    // Flat grass under chunks that aren't painted yet.
-    const land = rgba(T.land);
-    const white = this.sp(ID.white);
-    for (const e of list) if (!e.c) this.groundQuad(e.cx * CHUNK, e.cy * CHUNK, CHUNK, CHUNK, white, land);
-    this.flush(this.atlas.tex);
-    // North to south, so a chunk's bank overflow lands under its southern neighbour.
-    for (const e of list) {
-      const c = e.c;
-      if (!c) continue;
-      const u = c.pad / c.L;
-      this.batch.push(e.cx * CHUNK, e.cy * CHUNK, 0, -u, -u, c.w / c.L, 0, 0, c.h / c.L, { u0: 0, v0: 0, u1: 1, v1: 1, dx: 0, dy: 0, w: 0, h: 0 }, WHITE);
-      this.flush(c.tex);
-    }
+    this.terrain.draw(world, cam, this.quadVao, this.dpr, this.cssW, this.cssH);
   }
 
   private ground(world: World, ui: UiState, v: View): void {
@@ -935,17 +728,16 @@ export class GLRenderer {
       for (const k of world.spawns) this.groundRing(kx(k) + 0.5, ky(k) + 0.5, 0.3 + pulse * 0.15, 2 + pulse * 2, sc, 24);
     }
 
-    for (const [k, t] of grid.tiles) {
-      if (!isBelt(t.b) || !inView(k, v)) continue;
-      const period = BELT_TICKS[t.b]!;
-      const ph = Math.floor(((world.tickCount % period) / period) * BELT_PHASES);
-      this.groundQuad(kx(k), ky(k), 1, 1, this.sp(ID.belt(t.b, t.dir, ph)));
-    }
+    // Belts: static instances, drawn as continuous lines by their own shader.
+    this.flush(this.atlas.tex);
+    const ph = (b: Building) => (world.tickCount % BELT_TICKS[b]!) / BELT_TICKS[b]!;
+    this.statics.drawBelts(this.cam, this.cssW, this.cssH, this.dpr, [ph(Building.Belt), ph(Building.FastBelt)]);
+    const looks = beltLooks(world);
     for (const [k, t] of grid.tiles) {
       if (!isBelt(t.b) || !t.item || !inView(k, v)) continue;
-      const f = t.prog / BELT_TICKS[t.b]! - 0.5;
+      const [ix, iy] = beltPoint(kx(k), ky(k), t.dir, looks.get(k)?.shape ?? Shape.Straight, itemU(looks.get(k), t.prog / BELT_TICKS[t.b]!));
       const sp = this.sp(ID.item(t.item));
-      this.batch.push(kx(k) + 0.5 + DIR_X[t.dir] * f, ky(k) + 0.5 + DIR_Y[t.dir] * f, 0, sp.dx - 0.2, sp.dy - 0.2 * DEPTH, sp.w, 0, 0, sp.h, sp, WHITE);
+      this.batch.push(ix, iy, 0, sp.dx - 0.2, sp.dy - 0.2 * DEPTH, sp.w, 0, 0, sp.h, sp, WHITE);
     }
 
     const ev = ui.planEval;
@@ -981,44 +773,10 @@ export class GLRenderer {
     }
   }
 
-  private shadows(world: World, cam: Camera, v: View): void {
+  private shadows(world: World): void {
     const light = world.daylight;
     if (light <= 0.02) return;
-    const gl = this.gl;
-    const [sx, sy] = sunVector(world);
-    let n = 0;
-    const push = (x: number, y: number) => {
-      if (n + 2 > this.shadowTris.length) {
-        const d = new Float32Array(this.shadowTris.length * 2);
-        d.set(this.shadowTris);
-        this.shadowTris = d;
-      }
-      const [px, py] = cam.project(x, y, 0);
-      this.shadowTris[n++] = px;
-      this.shadowTris[n++] = py;
-    };
-    for (const [k, tile] of world.grid.tiles) {
-      if (isBelt(tile.b) || !inView(k, v)) continue;
-      const hex = shadowHex(kx(k), ky(k), HEIGHT[tile.b] ?? 0.5, sx, sy);
-      for (let i = 1; i < 5; i++) {
-        push(hex[0][0], hex[0][1]);
-        push(hex[i][0], hex[i][1]);
-        push(hex[i + 1][0], hex[i + 1][1]);
-      }
-    }
-    if (n === 0) return;
-    gl.useProgram(this.solid);
-    gl.uniform2f(this.u.oRes, this.cssW, this.cssH);
-    gl.uniform4fv(this.u.oCol, rgba('rgb(40,28,14)', 0.26 * light));
-    gl.bindVertexArray(this.solidVao);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.solidBuf);
-    gl.bufferData(gl.ARRAY_BUFFER, this.shadowTris.subarray(0, n), gl.STREAM_DRAW);
-    // Stencil: each pixel darkened once even where shadows overlap.
-    gl.enable(gl.STENCIL_TEST);
-    gl.stencilFunc(gl.EQUAL, 0, 0xff);
-    gl.stencilOp(gl.KEEP, gl.KEEP, gl.INCR);
-    gl.drawArrays(gl.TRIANGLES, 0, n / 2);
-    gl.disable(gl.STENCIL_TEST);
+    this.statics.drawShadows(this.cam, this.cssW, this.cssH, sunVector(world), rgba('rgb(40,28,14)', 0.26 * light));
   }
 
   private building(x: number, y: number, t: Tile, a: number, time: number): void {
@@ -1040,56 +798,67 @@ export class GLRenderer {
     const sp = this.sp(id);
     if (!sp) return;
     this.batch.push(x, y, 0, sp.dx, sp.dy, sp.w, 0, 0, sp.h, sp, a === 1 ? WHITE : fade(a));
-    if (t.b === Building.Furnace && t.cd > 0 && a === 1) {
-      const dot = this.sp(ID.dot);
-      for (let i = 0; i < 3; i++) {
-        const [px, py, pz, r, pa] = smokePuff(x, y, time, i);
-        this.batch.push(px, py, pz, -r, -r, r * 2, 0, 0, r * 2, dot, rgba('rgb(200,190,175)', pa));
-      }
-    }
   }
 
+  /**
+   * Buildings come from the static buffer (sorted north→south); enemies and
+   * plan ghosts are dynamic. Interleave them by depth: draw the static range
+   * up to each dynamic item, then the item.
+   */
   private raised(world: World, ui: UiState, alpha: number, v: View): void {
-    updateAims(world);
     const cam = this.cam;
-    const time = world.tickCount;
-    type Item = { d: number; kind: 0 | 1 | 2; x: number; y: number; t?: Tile; e?: (typeof world.enemies)[number]; a: number };
-    const list: Item[] = [];
-    for (const [k, t] of world.grid.tiles) {
-      if (isBelt(t.b) || !inView(k, v)) continue;
-      const x = kx(k);
-      const y = ky(k);
-      list.push({ d: y + 1 + x * 1e-4, kind: 0, x, y, t, a: 1 });
-    }
+    const st = this.statics;
+    type Dyn = { d: number; x: number; y: number; e?: (typeof world.enemies)[number]; t?: Tile; a: number };
+    const dyn: Dyn[] = [];
     for (const e of world.enemies) {
       const ex = lerp(e.prevX, e.x, alpha);
       const ey = lerp(e.prevY, e.y, alpha);
       if (ex < v.x0 - 1 || ex > v.x1 + 1 || ey < v.y0 - 1 || ey > v.y1 + 1) continue;
-      list.push({ d: ey + 0.5 + ex * 1e-4, kind: 1, x: ex, y: ey, e, a: 1 });
+      dyn.push({ d: ey + 0.5 + ex * 1e-4, x: ex, y: ey, e, a: 1 });
     }
     for (const [k, p] of ui.plans.map) {
       if (p.kind !== 'place' || isBelt(p.b) || !inView(k, v)) continue;
       const x = kx(k);
       const y = ky(k);
       const ok = ui.planEval?.ok.has(k) ?? false;
-      list.push({ d: y + 1 + x * 1e-4, kind: 2, x, y, t: blankTile(p.b, p.dir), a: ok ? 0.45 : 0.25 });
+      dyn.push({ d: y + 1 + x * 1e-4, x, y, t: blankTile(p.b, p.dir), a: ok ? 0.45 : 0.25 });
     }
-    list.sort((a, b) => a.d - b.d);
+    dyn.sort((a, b) => a.d - b.d);
 
+    const [i0, i1] = st.range(v.y0 - 1, v.y1);
+    let i = i0;
     const dot = this.sp(ID.dot);
     const shadowCol = rgba(C.shadow);
-    for (const it of list) {
-      if (it.kind === 1) {
-        const e = it.e!;
+    for (const it of dyn) {
+      let j = i;
+      while (j < i1 && st.depth(j) < it.d) j++;
+      if (j > i) {
+        this.flush(this.atlas.tex);
+        st.drawBuildings(i, j, cam, this.cssW, this.cssH, this.atlas.tex);
+        i = j;
+      }
+      if (it.e) {
         this.batch.push(it.x, it.y, 0, -0.17, -0.085, 0.34, 0, 0, 0.17, dot, shadowCol);
-        const p = enemyPose(cam, it.x, it.y, e);
+        const p = enemyPose(cam, it.x, it.y, it.e);
         const hq = Math.round(p.hop * MITE_HOP);
         const sq = Math.round(Math.abs(p.spin) * MITE_SPIN);
         const lq = ((Math.round((p.look / (Math.PI * 2)) * MITE_LOOK) % MITE_LOOK) + MITE_LOOK) % MITE_LOOK;
         const sp = this.sp(ID.mite(hq, sq, lq));
         this.batch.push(it.x, it.y, 0, sp.dx, sp.dy, sp.w, 0, 0, sp.h, sp, WHITE);
       } else {
-        this.building(it.x, it.y, it.t!, it.a, it.kind === 2 ? 0 : time);
+        this.building(it.x, it.y, it.t!, it.a, 0);
+      }
+    }
+    this.flush(this.atlas.tex);
+    st.drawBuildings(i, i1, cam, this.cssW, this.cssH, this.atlas.tex);
+
+    // Furnace smoke rises above everything around it.
+    for (let n = i0; n < i1; n++) {
+      const t = st.tiles[n];
+      if (t.b !== Building.Furnace || t.cd <= 0) continue;
+      for (let q = 0; q < 3; q++) {
+        const [px, py, pz, r, pa] = smokePuff(st.xs[n], st.ys[n], world.tickCount, q);
+        this.batch.push(px, py, pz, -r, -r, r * 2, 0, 0, r * 2, dot, rgba('rgb(200,190,175)', pa));
       }
     }
   }
@@ -1258,7 +1027,8 @@ export class GLRenderer {
   }
 
   dispose(): void {
-    this.terrain.clear();
+    this.statics.dispose();
+    this.terrain.dispose();
     this.atlas.dispose();
     this.next?.dispose();
   }

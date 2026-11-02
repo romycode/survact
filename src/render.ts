@@ -10,6 +10,7 @@
 import { Camera, DEPTH, RISE, projAt, type Proj } from './camera';
 import { BELT_TICKS, BUILDINGS, Building, DAY, isBelt, DIR_X, DIR_Y, Item, MAP, TURRET, type Placeable } from './sim/defs';
 import { NO_NEXT } from './sim/flowfield';
+import { Shape, beltLooks, beltPoint, itemU, paintBeltLine, type BeltLook } from './belts';
 import { T, TerrainCache, paintTerrain } from './terrainLayer';
 
 export const terrainCache = new TerrainCache();
@@ -184,18 +185,17 @@ function drawGround(ctx: CanvasRenderingContext2D, world: World, cam: Camera, ui
     }
   }
 
-  // Belts (flat) and their items
+  // Belts (one continuous line per run) and their items
   const gink = 1.6 * gpx;
+  const looks = beltLooks(world);
   for (const [k, t] of grid.tiles) {
     if (!isBelt(t.b) || !inView(k, v)) continue;
     const period = BELT_TICKS[t.b]!;
-    paintBelt(ctx, kx(k), ky(k), t.b, t.dir, (world.tickCount % period) / period, gink);
+    paintBeltLine(ctx, kx(k), ky(k), t.b === Building.FastBelt, t.dir, looks.get(k)!, (world.tickCount % period) / period, gink, BELT_COLORS);
   }
   for (const [k, t] of grid.tiles) {
     if (!isBelt(t.b) || !t.item || !inView(k, v)) continue;
-    const s = t.prog / BELT_TICKS[t.b]! - 0.5;
-    const cx = kx(k) + 0.5 + DIR_X[t.dir] * s;
-    const cy = ky(k) + 0.5 + DIR_Y[t.dir] * s;
+    const [cx, cy] = beltPoint(kx(k), ky(k), t.dir, looks.get(k)?.shape ?? Shape.Straight, itemU(looks.get(k), t.prog / BELT_TICKS[t.b]!));
     paintItem(ctx, cx, cy, t.item, gink);
   }
 
@@ -295,56 +295,21 @@ export function groundArrow(ctx: CanvasRenderingContext2D, cx: number, cy: numbe
   ctx.fill();
 }
 
-/**
- * A belt tile in ground coords: iron frame, rubber band with slats that move,
- * brass chevrons. Fast belts: copper band with brass side rails.
- */
-export function paintBelt(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  b: number,
-  dir: number,
-  phase: number,
-  ink: number,
-): void {
-  const fast = b === Building.FastBelt;
-  const along = DIR_X[dir] !== 0; // band runs along x
-  ctx.fillStyle = C.ironDark;
-  ctx.fillRect(x + 0.06, y + 0.06, 0.88, 0.88);
-  ctx.fillStyle = fast ? C.fastBelt : C.belt;
-  if (along) ctx.fillRect(x + 0.06, y + 0.2, 0.88, 0.6);
-  else ctx.fillRect(x + 0.2, y + 0.06, 0.6, 0.88);
-  // slats moving with the band
-  ctx.strokeStyle = fast ? '#9a6038' : C.beltSlat;
-  ctx.lineWidth = ink * 1.2;
-  ctx.beginPath();
-  for (let i = 0; i < 3; i++) {
-    const s = ((i / 3 + phase) % 1) * 0.88 + 0.06;
-    const t = DIR_X[dir] < 0 || DIR_Y[dir] < 0 ? 1 - s : s;
-    if (along) {
-      ctx.moveTo(x + t, y + 0.22);
-      ctx.lineTo(x + t, y + 0.78);
-    } else {
-      ctx.moveTo(x + 0.22, y + t);
-      ctx.lineTo(x + 0.78, y + t);
-    }
-  }
-  ctx.stroke();
-  if (fast) {
-    ctx.fillStyle = C.fastBeltRail;
-    if (along) {
-      ctx.fillRect(x + 0.06, y + 0.12, 0.88, 0.07);
-      ctx.fillRect(x + 0.06, y + 0.81, 0.88, 0.07);
-    } else {
-      ctx.fillRect(x + 0.12, y + 0.06, 0.07, 0.88);
-      ctx.fillRect(x + 0.81, y + 0.06, 0.07, 0.88);
-    }
-  }
-  groundArrow(ctx, x + 0.5 + DIR_X[dir] * 0.12, y + 0.5 + DIR_Y[dir] * 0.12, dir, 0.16, fast ? C.fastBeltMark : C.beltMark);
-  ctx.strokeStyle = C.ink;
-  ctx.lineWidth = ink;
-  ctx.strokeRect(x + 0.06, y + 0.06, 0.88, 0.88);
+export const BELT_COLORS = {
+  frame: C.ironDark,
+  band: C.belt,
+  fastBand: C.fastBelt,
+  slat: C.beltMark,
+  fastSlat: C.fastBeltMark,
+  rail: C.fastBeltRail,
+  ink: C.ink,
+  bumper: C.brass,
+};
+
+/** A lone straight belt piece (toolbar icon). */
+export function paintBelt(ctx: CanvasRenderingContext2D, x: number, y: number, b: number, dir: number, phase: number, ink: number): void {
+  const look: BeltLook = { shape: Shape.Straight, caps: 0 };
+  paintBeltLine(ctx, x, y, b === Building.FastBelt, dir, look, phase, ink, BELT_COLORS);
 }
 
 /** Iron ore chunk (rough, rusty) or a steel plate, in ground coords. */
