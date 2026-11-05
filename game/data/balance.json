@@ -47,6 +47,13 @@
     "food": 60
   },
 
+  // Terraced terrain: one level up/down is walkable at extra cost, two or more is a cliff.
+  "terrain": {
+    "climb_up_cost": 12,
+    "climb_down_cost": 4,
+    "lapse_rate_per_level": 0.6
+  },
+
   // move_cost 0 = impassable. amount = units a fresh tile holds. depletes_to = tile once empty.
   "tiles": {
     "grass": { "move_cost": 10 },

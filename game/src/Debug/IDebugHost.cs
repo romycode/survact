@@ -22,4 +22,7 @@ public interface IDebugHost
     /// <summary>Low-res render factor of the retro view (1 = native resolution).</summary>
     int PixelScale { get; set; }
     bool RetroFilter { get; set; }
+
+    /// <summary>true = oblique orthographic (Factorio-like), false = free perspective orbit.</summary>
+    bool ObliqueCamera { get; set; }
 }

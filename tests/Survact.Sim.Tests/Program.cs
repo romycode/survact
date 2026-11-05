@@ -11,6 +11,7 @@ var tests = new (string Name, Action Body)[]
 {
     ("data: shipped balance.json loads", DataLoads),
     ("data: typos and bad values are rejected", DataRejectsBadInput),
+    ("terrain: mountains and cliffs exist, nobody walks through a cliff", TerrainCliffs),
     ("determinism: same seed, same world", Determinism),
     ("commands: replay of seed + log reproduces the session", ReplayReproducesSession),
     ("commands: invalid commands are rejected, not applied", InvalidCommandsRejected),
@@ -64,6 +65,51 @@ static void DataRejectsBadInput()
             return;
         }
         throw new Exception($"data with {what} was accepted");
+    }
+}
+
+static void TerrainCliffs()
+{
+    var sim = Simulation.Create(new SimSettings(Seed: 1337, InitialColonists: 120), TestData.Game);
+    var map = sim.Map;
+
+    int maxLevel = 0, cliffEdges = 0;
+    for (int i = 0; i < map.Count; i++)
+    {
+        maxLevel = Math.Max(maxLevel, map.LevelAt(i));
+        int x = map.X(i);
+        if (x + 1 < map.Width && map.Rules.Walkable(map.Get(i)) && map.Rules.Walkable(map.Get(i + 1))
+            && Math.Abs(map.LevelAt(i) - map.LevelAt(i + 1)) >= 2) cliffEdges++;
+    }
+    Assert(maxLevel >= 8, $"no real mountains (max level {maxLevel})");
+    Assert(cliffEdges >= 100, $"too few cliffs ({cliffEdges} horizontal cliff edges)");
+
+    // Every step of every live path, and every flow-field step home, must be a legal step.
+    for (int t = 0; t < 30; t++)
+    {
+        sim.Step(100);
+        var c = sim.Colonists;
+        for (int i = 0; i < c.Count; i++)
+        {
+            if (c.Nav[i] != Survact.Sim.Entities.Nav.Path) continue;
+            int prev = map.Index((int)c.X[i], (int)c.Y[i]);
+            var path = c.PathSlice(i);
+            for (int k = c.PathPos[i]; k < c.PathLength[i]; k++)
+            {
+                // The colonist may be between its tile and the next node: only check node-to-node.
+                if (k > c.PathPos[i]) Assert(map.CanStep(prev, path[k]), $"path crosses a cliff or wall at node {path[k]}");
+                prev = path[k];
+            }
+        }
+    }
+
+    var field = sim.StockpileField;
+    for (int i = 0; i < map.Count; i += 7)
+    {
+        if (field.DistanceAt(i) is 0 or Survact.Sim.Pathfinding.FlowField.Unreachable) continue;
+        int next = field.Next(i);
+        Assert(next >= 0, $"reachable tile {i} has no downhill step");
+        Assert(map.CanStep(i, next), $"flow field steps across a cliff from {i} to {next}");
     }
 }
 

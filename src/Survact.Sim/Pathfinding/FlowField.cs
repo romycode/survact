@@ -58,7 +58,7 @@ public sealed class FlowField
 
         void Consider(int n)
         {
-            if (_dist[n] < bestDist)
+            if (_dist[n] < bestDist && _map.CanStep(index, n))
             {
                 bestDist = _dist[n];
                 best = n;
@@ -88,7 +88,6 @@ public sealed class FlowField
         {
             if (d != _dist[cur]) continue;
             int x = cur % width, y = cur / width;
-            // Cost of moving FROM neighbour INTO cur = cost of cur's terrain, mirrored as entering the neighbour.
             if (x > 0) Relax(cur - 1);
             if (x < width - 1) Relax(cur + 1);
             if (y > 0) Relax(cur - width);
@@ -96,9 +95,9 @@ public sealed class FlowField
 
             void Relax(int n)
             {
-                int cost = _map.Rules.MoveCost(_map.Get(n));
-                if (cost == 0) return;
-                int nd = d + _map.Rules.MoveCost(_map.Get(cur));
+                // Distance is "from n to the target", so the step being priced is n -> cur.
+                if (!_map.CanStep(n, cur)) return;
+                int nd = d + _map.StepCost(n, cur);
                 if (nd >= _dist[n]) return;
                 _dist[n] = nd;
                 open.Enqueue(n, nd);

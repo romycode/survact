@@ -24,7 +24,7 @@ dotnet run -c Release --project tests/Survact.Sim.Tests -- replay   # filtrar po
 | Acción | Tecla |
 |---|---|
 | Mover cámara | WASD / flechas · botón central arrastra |
-| Rotar cámara | Q / E |
+| Rotar cámara | Q / E (vista oblicua: giros de 90°) |
 | Zoom | rueda · `=` / `-` |
 | Pausa · velocidad x1/x3/x10 | Espacio · 1 / 2 / 3 |
 | Guardar · cargar | F5 · F9 |
@@ -66,6 +66,14 @@ tools/i18n.py               Extrae textos de C# y escenas → .pot, actualiza lo
 ideas.md                    Backlog de ideas de diseño.
 ```
 
+## Terreno
+
+Terrazas de altura entera (0–10) generadas con ruido: cordilleras con crestas y nieve perpetua en las
+cumbres, mesetas con escarpes y rampas naturales, lagos en los valles. Moverse un nivel arriba o abajo
+cuesta extra (`terrain.climb_*_cost`); **dos niveles o más es un acantilado infranqueable**, y lo
+respetan el A*, las regiones y el flow field (hay test). Hace más frío arriba:
+`terrain.lapse_rate_per_level` grados por nivel sobre la temperatura del valle.
+
 ## Convenciones (no romper)
 
 1. **El sim no conoce Godot.** Si `Survact.Sim` necesita `using Godot;`, el diseño está mal.
@@ -92,6 +100,7 @@ ideas.md                    Backlog de ideas de diseño.
 | `goto x y` | centra la cámara |
 | `hash` | hash del estado completo: compara máquinas o replays |
 | `log` | log de comandos de la sesión |
+| `camera oblique\|perspective` | vista oblicua ortográfica tipo Factorio (por defecto) o perspectiva libre |
 | `pixel <1-6>` · `retro [on\|off]` | escala de render 3D (1 = nativa) · filtro posterizado |
 | `seed` · `new [seed]` · `save` · `load` · `overlay` · `clear` | |
 

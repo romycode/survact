@@ -27,7 +27,7 @@ ambient_light_energy = 0.54
 tonemap_mode = 3
 fog_enabled = true
 fog_light_color = Color(0.66, 0.74, 0.83, 1)
-fog_density = 0.004
+fog_density = 0.0008
 
 [node name="Main" type="Node"]
 script = ExtResource("1_game")

@@ -16,6 +16,7 @@ public interface ISearchGoal
 ///  - <see cref="FindPath"/>: A* to a known tile.
 ///  - <see cref="FindNearest{TGoal}"/>: Dijkstra to the closest tile matching a predicate, by walking cost.
 ///    This is what "go to the nearest tree" must use: straight-line nearest can sit behind a lake.
+/// Moves follow TileMap.CanStep/StepCost: cliffs (2+ levels) are walls, climbing costs extra.
 /// Zero allocations per query: score arrays are reused and "cleared" by bumping a generation stamp.
 /// </summary>
 public sealed class GridPathfinder
@@ -106,8 +107,8 @@ public sealed class GridPathfinder
             {
                 int next = neighbours[k];
                 if (_closedStamp[next] == gen) continue;
-                int cost = _map.Rules.MoveCost(_map.Get(next));
-                if (cost == 0) continue;
+                if (!_map.CanStep(current, next)) continue; // impassable tile or cliff
+                int cost = _map.StepCost(current, next);
 
                 int tentative = _g[current] + cost;
                 if (_stamp[next] == gen && tentative >= _g[next]) continue;

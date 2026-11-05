@@ -76,16 +76,16 @@ public sealed class Regions
                 int cur = _queue[head++];
                 size++;
                 int x = cur % width, y = cur / width;
-                if (x > 0) Visit(cur - 1);
-                if (x < width - 1) Visit(cur + 1);
-                if (y > 0) Visit(cur - width);
-                if (y < height - 1) Visit(cur + width);
+                if (x > 0) Visit(cur, cur - 1);
+                if (x < width - 1) Visit(cur, cur + 1);
+                if (y > 0) Visit(cur, cur - width);
+                if (y < height - 1) Visit(cur, cur + width);
             }
             _sizes.Add(size);
 
-            void Visit(int n)
+            void Visit(int from, int n)
             {
-                if (_id[n] != None || !_map.Rules.Walkable(_map.Get(n))) return;
+                if (_id[n] != None || !_map.CanStep(from, n)) return; // cliffs split regions
                 _id[n] = region;
                 _queue[tail++] = n;
             }

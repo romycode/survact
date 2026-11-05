@@ -33,6 +33,7 @@ public static class DebugCommands
         ["load"] = new("load", "quick load", (_, h) => h.QuickLoad() ? "loaded" : Error("load failed")),
         ["pixel"] = new("pixel <1-6>", "3D render scale (1 = native, 3 = default retro)", (a, h) => { h.PixelScale = Math.Clamp(Int(a[0]), 1, 6); return $"pixel scale {h.PixelScale}"; }),
         ["retro"] = new("retro [on|off]", "toggle the posterize/dither filter", Retro),
+        ["camera"] = new("camera <oblique|perspective>", "oblique = Factorio-like ortho, Q/E 90° steps; perspective = free orbit", CameraMode),
         ["overlay"] = new("overlay", "toggle the debug overlay (also F3)", (_, h) => { h.ToggleDebugOverlay(); return "ok"; }),
         ["clear"] = new("clear", "clear the console", (_, h) => { h.ClearConsole(); return ""; }),
     };
@@ -127,6 +128,17 @@ public static class DebugCommands
     {
         h.RetroFilter = a.Length == 0 ? !h.RetroFilter : a[0].Equals("on", StringComparison.OrdinalIgnoreCase);
         return $"retro filter {(h.RetroFilter ? "on" : "off")}";
+    }
+
+    private static string CameraMode(string[] a, IDebugHost h)
+    {
+        h.ObliqueCamera = a[0].ToLowerInvariant() switch
+        {
+            "oblique" or "ortho" => true,
+            "perspective" or "persp" => false,
+            _ => throw new FormatException(),
+        };
+        return $"camera {(h.ObliqueCamera ? "oblique" : "perspective")}";
     }
 
     private static int Int(string s) => int.Parse(s, CultureInfo.InvariantCulture);

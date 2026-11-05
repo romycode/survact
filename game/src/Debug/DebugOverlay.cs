@@ -39,7 +39,9 @@ public partial class DebugOverlay : CanvasLayer
             int idx = map.Index(t.X, t.Y);
             int region = sim.Regions.Of(idx);
             int dist = sim.StockpileField.DistanceAt(idx);
+            float felt = sim.Temperature - sim.Balance.LapseRatePerLevel * map.LevelAt(idx);
             _sb.Append($"\ntile ({t.X},{t.Y})  {map.Get(idx)}  amount {map.AmountAt(idx)}{(map.IsReserved(idx) ? "  RESERVED" : "")}\n")
+               .Append($"level {map.LevelAt(idx)}  felt {felt:F1}°C\n")
                .Append($"region {(region == Regions.None ? "-" : region.ToString())}  to stockpile {(dist == FlowField.Unreachable ? "unreachable" : dist.ToString())}\n");
         }
 

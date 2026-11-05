@@ -14,6 +14,7 @@ public partial class ColonistView : MultiMeshInstance3D
     private Simulation? _sim;
     private MultiMesh _mesh = null!;
     private float[] _yaw = new float[64];
+    private float[] _height = new float[64];
 
     public override void _Ready()
     {
@@ -28,7 +29,7 @@ public partial class ColonistView : MultiMeshInstance3D
 
     public void Bind(Simulation sim) => _sim = sim;
 
-    public void Sync(float alpha)
+    public void Sync(float alpha, double delta)
     {
         if (_sim is null) return;
         var c = _sim.Colonists;
@@ -36,7 +37,12 @@ public partial class ColonistView : MultiMeshInstance3D
         int n = c.Count;
 
         if (_mesh.InstanceCount < n) _mesh.InstanceCount = (int)System.Numerics.BitOperations.RoundUpToPowerOf2((uint)Math.Max(n, 64));
-        if (_yaw.Length < _mesh.InstanceCount) Array.Resize(ref _yaw, _mesh.InstanceCount);
+        if (_yaw.Length < _mesh.InstanceCount)
+        {
+            Array.Resize(ref _yaw, _mesh.InstanceCount);
+            Array.Resize(ref _height, _mesh.InstanceCount);
+        }
+        float follow = 1f - Mathf.Exp(-14f * (float)delta); // ease up/down terrace steps instead of snapping
         _mesh.VisibleInstanceCount = n;
 
         for (int i = 0; i < n; i++)
@@ -47,9 +53,10 @@ public partial class ColonistView : MultiMeshInstance3D
             float x = c.PrevX[i] + dx * alpha;
             float z = c.PrevY[i] + dz * alpha;
             int tx = Math.Clamp((int)x, 0, map.Width - 1), tz = Math.Clamp((int)z, 0, map.Height - 1);
-            float y = Math.Max(0f, TerrainMesher.HeightOf(map.Get(tx, tz), tx, tz));
+            float ground = TerrainMesher.GroundAt(map, tx, tz);
+            _height[i] = Mathf.Abs(_height[i] - ground) > 3f ? ground : Mathf.Lerp(_height[i], ground, follow);
 
-            _mesh.SetInstanceTransform(i, new Transform3D(new Basis(Vector3.Up, _yaw[i]), new Vector3(x, y, z)));
+            _mesh.SetInstanceTransform(i, new Transform3D(new Basis(Vector3.Up, _yaw[i]), new Vector3(x, _height[i], z)));
             _mesh.SetInstanceColor(i, Palette.ColonistColor(c.State[i], c.Job[i], c.Carry[i], c.Warmth[i], c.Hunger[i]));
         }
     }

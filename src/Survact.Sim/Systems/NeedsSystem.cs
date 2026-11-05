@@ -8,8 +8,10 @@ internal static class NeedsSystem
         var c = sim.Colonists;
         var colony = sim.Colony;
         int n = c.Count;
-        float coldDeficit = MathF.Max(0, sim.Balance.ComfortTemperature - sim.Temperature);
-        float coldLoss = coldDeficit * sim.Balance.ColdLossPerDegreeTick;
+        var map = sim.Map;
+        float comfortGap = sim.Balance.ComfortTemperature - sim.Temperature;
+        float lapse = sim.Balance.LapseRatePerLevel;
+        float lossPerDegree = sim.Balance.ColdLossPerDegreeTick;
         bool heaterLit = colony.HeaterLit;
         int heatRadius = sim.Balance.HeatRadius;
 
@@ -18,6 +20,9 @@ internal static class NeedsSystem
         for (int i = 0; i < n; i++)
         {
             hunger[i] = MathF.Max(0, hunger[i] - sim.Balance.HungerPerTick);
+
+            // Higher up is colder: the temperature a colonist feels drops with its terrain level.
+            float coldLoss = MathF.Max(0, comfortGap + lapse * map.LevelAt((int)x[i], (int)y[i])) * lossPerDegree;
 
             float w = warmth[i];
             if (heaterLit && colony.InHeatRange(x[i], y[i], heatRadius)) w += sim.Balance.HeaterWarmthPerTick;

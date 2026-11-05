@@ -12,12 +12,18 @@ public sealed class TileTable
     private readonly ushort[] _amount;
     private readonly Tile[] _depletesTo;
 
-    private TileTable(int[] moveCost, ushort[] amount, Tile[] depletesTo)
+    private TileTable(int[] moveCost, ushort[] amount, Tile[] depletesTo, int climbUp, int climbDown)
     {
         _moveCost = moveCost;
         _amount = amount;
         _depletesTo = depletesTo;
+        ClimbUpCost = climbUp;
+        ClimbDownCost = climbDown;
     }
+
+    /// <summary>Extra path cost for stepping one level up / down (terrain.climb_*_cost).</summary>
+    public int ClimbUpCost { get; }
+    public int ClimbDownCost { get; }
 
     /// <summary>A* cost of entering a tile. 0 = impassable.</summary>
     public int MoveCost(Tile t) => _moveCost[(int)t];
@@ -25,8 +31,11 @@ public sealed class TileTable
     public ushort InitialAmount(Tile t) => _amount[(int)t];
     public Tile Depleted(Tile t) => _depletesTo[(int)t];
 
-    internal static TileTable Bake(Dictionary<string, TileDto> dtos, List<string> errors)
+    internal static TileTable Bake(Dictionary<string, TileDto> dtos, TerrainDto terrain, List<string> errors)
     {
+        if (terrain.ClimbUpCost < 0) errors.Add("terrain.climb_up_cost must be >= 0");
+        if (terrain.ClimbDownCost < 0) errors.Add("terrain.climb_down_cost must be >= 0");
+
         var tiles = Enum.GetValues<Tile>();
         var moveCost = new int[tiles.Length];
         var amount = new ushort[tiles.Length];
@@ -59,6 +68,6 @@ public sealed class TileTable
             }
         }
 
-        return new TileTable(moveCost, amount, depletes);
+        return new TileTable(moveCost, amount, depletes, terrain.ClimbUpCost, terrain.ClimbDownCost);
     }
 }

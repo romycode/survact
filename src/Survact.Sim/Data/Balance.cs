@@ -15,6 +15,8 @@ public sealed class Balance
     public float DailySwing { get; private init; }
     public float MinTemperature { get; private init; }
     public float ComfortTemperature { get; private init; }
+    /// <summary>Degrees colder per terrain level above the valley floor.</summary>
+    public float LapseRatePerLevel { get; private init; }
 
     // Needs
     public float HungerPerTick { get; private init; }
@@ -63,6 +65,7 @@ public sealed class Balance
         Positive(d.Heater.RadiusTiles, "heater.radius_tiles");
         Positive(d.Ai.SearchMaxNodes, "ai.search_max_nodes");
         Positive(d.Ai.SearchNodesPerTick, "ai.search_nodes_per_tick");
+        if (d.Terrain.LapseRatePerLevel < 0) errors.Add("terrain.lapse_rate_per_level must be >= 0");
         if (d.Climate.MinTemperature > d.Climate.StartTemperature)
             errors.Add("climate.min_temperature must be <= climate.start_temperature");
         if (d.Needs.WarmEnough <= d.Needs.WarmBelow)
@@ -77,6 +80,7 @@ public sealed class Balance
             DailySwing = d.Climate.DailySwing,
             MinTemperature = d.Climate.MinTemperature,
             ComfortTemperature = d.Climate.ComfortTemperature,
+            LapseRatePerLevel = d.Terrain.LapseRatePerLevel,
 
             HungerPerTick = 1f / (d.Needs.HungerDaysToEmpty * Math.Max(1, ticksPerDay)),
             ColdLossPerDegreeTick = d.Needs.ColdLossPerDegreePerDay / Math.Max(1, ticksPerDay),

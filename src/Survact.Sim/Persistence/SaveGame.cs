@@ -11,12 +11,12 @@ namespace Survact.Sim.Persistence;
 /// Bump <see cref="Version"/> on any layout change and add a migration in <see cref="Load"/>.
 /// Game data (balance) is NOT stored: a save loads with the current data, so balance patches
 /// apply to existing saves, as players expect.
-/// v2: climate offset + pending commands.
+/// v2: climate offset + pending commands. v3: terrain levels.
 /// </summary>
 public static class SaveGame
 {
     private const uint Magic = 0x54565253; // "SRVT"
-    public const int Version = 2;
+    public const int Version = 3;
 
     public static void Save(Simulation sim, Stream stream)
     {
@@ -35,6 +35,7 @@ public static class SaveGame
 
         var map = sim.Map;
         WriteSpan<Tile>(w, map.Tiles);
+        WriteSpan<byte>(w, map.Levels);
         WriteSpan<ushort>(w, map.Amount);
         WriteSpan<bool>(w, map.Reserved);
         WriteSpan<long>(w, sim.SearchExhaustedUntil);
@@ -80,6 +81,7 @@ public static class SaveGame
 
         var map = new TileMap(settings.Width, settings.Height, data.Tiles);
         ReadSpan<Tile>(r, map.Tiles);
+        ReadSpan<byte>(r, map.Levels);
         ReadSpan<ushort>(r, map.Amount);
         ReadSpan<bool>(r, map.Reserved);
         var exhausted = new long[map.ChunksX * map.ChunksY * 2];

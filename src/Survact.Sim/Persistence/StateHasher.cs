@@ -23,6 +23,7 @@ internal static class StateHasher
 
         var map = sim.Map;
         MixBytes(ref h, MemoryMarshal.AsBytes(map.Tiles.AsSpan()));
+        MixBytes(ref h, map.Levels);
         MixBytes(ref h, MemoryMarshal.AsBytes(map.Amount.AsSpan()));
         MixBytes(ref h, MemoryMarshal.AsBytes(map.Reserved.AsSpan()));
         MixBytes(ref h, MemoryMarshal.AsBytes(sim.SearchExhaustedUntil.AsSpan()));

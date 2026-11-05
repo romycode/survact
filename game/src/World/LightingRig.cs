@@ -57,7 +57,7 @@ public partial class LightingRig : Node3D
         var sky = NightSky.Lerp(DaySky, day);
         _env.BackgroundColor = sky;
         _env.FogLightColor = sky.Lerp(new Color(0.85f, 0.88f, 0.94f), frost * 0.5f * day);
-        _env.FogDensity = 0.0025f + frost * 0.009f;
+        _env.FogDensity = 0.0008f + frost * 0.0035f; // camera boom is ~80 units in oblique mode: keep it a tint, not a wall
         _env.AmbientLightColor = NightAmbient.Lerp(DayAmbient, day);
         _env.AmbientLightEnergy = 0.32f + 0.22f * day;
 

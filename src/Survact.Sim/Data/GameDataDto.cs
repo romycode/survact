@@ -12,6 +12,7 @@ public sealed class GameDataDto
     public required WorkDto Work { get; init; }
     public required AiDto Ai { get; init; }
     public required StartDto Start { get; init; }
+    public required TerrainDto Terrain { get; init; }
     public required Dictionary<string, TileDto> Tiles { get; init; }
 }
 
@@ -70,4 +71,11 @@ public sealed class TileDto
     public required int MoveCost { get; init; }
     public int Amount { get; init; }
     public string? DepletesTo { get; init; }
+}
+
+public sealed class TerrainDto
+{
+    public required int ClimbUpCost { get; init; }
+    public required int ClimbDownCost { get; init; }
+    public required float LapseRatePerLevel { get; init; }
 }

@@ -4,6 +4,7 @@ using Survact.Game.Controls;
 using Survact.Game.Debug;
 using Survact.Game.UI;
 using Survact.Game.World;
+using Survact.Game.World.Geometry;
 using Survact.Sim;
 using Survact.Sim.Commands;
 using Survact.Sim.Data;
@@ -95,7 +96,7 @@ public partial class GameController : Node, IDebugHost
         float alpha = Paused ? 1f : (float)(_accumulator / TickDt);
         _terrain.Sync();
         _vegetation.Sync();
-        _colonists.Sync(alpha);
+        _colonists.Sync(alpha, delta);
         _heater.Sync(delta);
         _lighting.Apply(Sim.TimeOfDay, Sim.Temperature);
 
@@ -189,7 +190,14 @@ public partial class GameController : Node, IDebugHost
 
     public void ClearConsole() => _console.ClearLog();
 
-    public void FocusTile(int x, int y) => _camera.CenterOn(new Vector3(x + 0.5f, 0, y + 0.5f));
+    public void FocusTile(int x, int y) =>
+        _camera.CenterOn(new Vector3(x + 0.5f, TerrainMesher.GroundAt(Sim.Map, x, y), y + 0.5f));
+
+    public bool ObliqueCamera
+    {
+        get => _camera.Mode == CameraRig.ViewMode.Oblique;
+        set => _camera.SetMode(value ? CameraRig.ViewMode.Oblique : CameraRig.ViewMode.Perspective);
+    }
 
     public int PixelScale
     {
@@ -214,6 +222,11 @@ public partial class GameController : Node, IDebugHost
         Sim.CommandRejected += OnCommandRejected;
         _accumulator = 0;
 
+        _camera.GroundHeight = (x, z) =>
+        {
+            int tx = Mathf.FloorToInt(x), tz = Mathf.FloorToInt(z);
+            return sim.Map.InBounds(tx, tz) ? TerrainMesher.HeightAt(sim.Map, tx, tz) : 0f;
+        };
         _terrain.Bind(sim);
         _vegetation.Bind(sim);
         _colonists.Bind(sim);

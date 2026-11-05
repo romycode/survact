@@ -44,7 +44,7 @@ public sealed class GameData
 
         var errors = new List<string>();
         var balance = Balance.Bake(dto, errors);
-        var tiles = TileTable.Bake(dto.Tiles, errors);
+        var tiles = TileTable.Bake(dto.Tiles, dto.Terrain, errors);
         if (errors.Count > 0)
             throw new GameDataException($"{sourceName}:\n  - " + string.Join("\n  - ", errors));
 

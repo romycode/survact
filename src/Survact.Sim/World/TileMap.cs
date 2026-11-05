@@ -9,6 +9,9 @@ public sealed class TileMap
 {
     public const int ChunkSize = 32;
 
+    /// <summary>Terrain is terraced: each tile sits on an integer level in [0, MaxLevel].</summary>
+    public const int MaxLevel = 10;
+
     public readonly int Width;
     public readonly int Height;
     public readonly int ChunksX;
@@ -17,6 +20,7 @@ public sealed class TileMap
     internal readonly Tile[] Tiles;
     internal readonly ushort[] Amount;
     internal readonly bool[] Reserved;
+    internal readonly byte[] Levels;
 
     /// <summary>Incremented whenever any tile in the chunk changes. Read by renderers.</summary>
     public readonly int[] ChunkVersion;
@@ -39,6 +43,7 @@ public sealed class TileMap
         Tiles = new Tile[width * height];
         Amount = new ushort[width * height];
         Reserved = new bool[width * height];
+        Levels = new byte[width * height];
         ChunkVersion = new int[ChunksX * ChunksY];
     }
 
@@ -54,6 +59,32 @@ public sealed class TileMap
     public ushort AmountAt(int index) => Amount[index];
     public bool IsReserved(int index) => Reserved[index];
     public ReadOnlySpan<Tile> AllTiles => Tiles;
+    public int LevelAt(int index) => Levels[index];
+    public int LevelAt(int x, int y) => Levels[Index(x, y)];
+
+    public void SetLevel(int index, int level)
+    {
+        byte l = (byte)Math.Clamp(level, 0, MaxLevel);
+        if (Levels[index] == l) return;
+        Levels[index] = l;
+        WalkabilityVersion++; // edges to neighbours may have become (or stopped being) cliffs
+        TouchChunk(index);
+    }
+
+    /// <summary>
+    /// Can a walker move from one tile to a 4-adjacent one? The target must be walkable and at most
+    /// one level up or down: two or more levels is a cliff. Symmetric, so regions stay well defined.
+    /// </summary>
+    public bool CanStep(int from, int to) =>
+        Rules.Walkable(Tiles[to]) && Rules.Walkable(Tiles[from]) && Math.Abs(Levels[to] - Levels[from]) <= 1;
+
+    /// <summary>Cost of a step (only meaningful when CanStep): terrain cost plus climbing up or down.</summary>
+    public int StepCost(int from, int to)
+    {
+        int cost = Rules.MoveCost(Tiles[to]);
+        int climb = Levels[to] - Levels[from];
+        return climb > 0 ? cost + Rules.ClimbUpCost : climb < 0 ? cost + Rules.ClimbDownCost : cost;
+    }
 
     public void Set(int index, Tile tile, ushort amount)
     {
