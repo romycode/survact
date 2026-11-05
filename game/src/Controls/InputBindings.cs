@@ -61,9 +61,17 @@ public static class InputBindings
         var keycode = k.PhysicalKeycode != global::Godot.Key.None
             ? DisplayServer.KeyboardGetKeycodeFromPhysical(k.PhysicalKeycode)
             : k.Keycode;
-        string name = OS.GetKeycodeString(keycode);
+        // Printable keys are their own Unicode code point in Godot's Key enum: show the character
+        // ("º", "Ñ", "W") instead of the internal name ("Masculine", "Ntilde").
+        long code = (long)keycode;
+        string name = code is > 0x20 and < SpecialKeyFlag
+            ? char.ConvertFromUtf32((int)code).ToUpperInvariant()
+            : OS.GetKeycodeString(keycode);
         return k.CtrlPressed ? $"Ctrl+{name}" : name;
     }
+
+    /// <summary>Godot's KEY_SPECIAL: keycodes at or above this are non-printable keys (F1, Shift…).</summary>
+    private const long SpecialKeyFlag = 1 << 22;
 
     private static InputEventKey Key(Key physical, bool ctrl = false) =>
         new() { PhysicalKeycode = physical, CtrlPressed = ctrl };
