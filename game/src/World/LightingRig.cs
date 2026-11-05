@@ -13,7 +13,7 @@ public partial class LightingRig : Node3D
     private static readonly StringName FrostGlobal = "survact_frost";
 
     [Export] public float MaxSunElevation { get; set; } = 62f;
-    [Export] public float SunEnergy { get; set; } = 1.1f;
+    [Export] public float SunEnergy { get; set; } = 1.0f;
     [Export] public float MoonEnergy { get; set; } = 0.22f;
 
     private static readonly Color DaySky = new(0.66f, 0.74f, 0.83f);
@@ -59,7 +59,7 @@ public partial class LightingRig : Node3D
         _env.FogLightColor = sky.Lerp(new Color(0.85f, 0.88f, 0.94f), frost * 0.5f * day);
         _env.FogDensity = 0.0008f + frost * 0.0035f; // camera boom is ~80 units in oblique mode: keep it a tint, not a wall
         _env.AmbientLightColor = NightAmbient.Lerp(DayAmbient, day);
-        _env.AmbientLightEnergy = 0.32f + 0.22f * day;
+        _env.AmbientLightEnergy = 0.48f + 0.27f * day;
 
         RenderingServer.GlobalShaderParameterSet(FrostGlobal, frost);
     }

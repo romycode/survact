@@ -1,7 +1,7 @@
 # Survact
 
 Colony survival en frío extremo (Frostpunk + Rimworld + Factorio + ...). Godot 4.7 + C# / .NET 10.
-Vista 3D low-poly con filtro retro (render a baja resolución + posterizado con dithering).
+Vista 3D low-poly limpia (resolución nativa, MSAA, caras planas, sombras) con cámara oblicua tipo Factorio.
 
 ## Requisitos
 
@@ -49,10 +49,10 @@ src/Survact.Sim/            Simulación. C# puro: sin Godot, sin paquetes NuGet.
 tests/Survact.Sim.Tests/    Runner de consola contra los datos reales del juego. Código 1 si falla.
 game/                       Proyecto Godot. Solo presentación.
   data/balance.json         TODO el balance y las propiedades de terreno. Editable sin recompilar.
-  scenes/                   Main.tscn: RetroView (SubViewport 3D a 1/3 de resolución) + UI + Debug.
+  scenes/                   Main.tscn: RetroView (SubViewport 3D, nativa por defecto) + UI + Debug.
                             world/Heater.tscn, ui/Hud.tscn, debug/*.tscn.
   shaders/lowpoly.gdshader  Material único del mundo: nieve/hielo según el uniform global survact_frost.
-  shaders/retro.gdshader    Posterizado + dithering Bayer sobre la vista 3D.
+  shaders/retro.gdshader    Filtro opcional (apagado): posterizado + dithering Bayer.
   ui/theme.tres             Theme global (Project Settings → GUI → Theme).
   i18n/                     gettext: strings.pot (plantilla generada) + un .po por idioma (es).
   src/Core/                 GameController (dueño del sim, timestep), carga de datos.
@@ -101,7 +101,7 @@ respetan el A*, las regiones y el flow field (hay test). Hace más frío arriba:
 | `hash` | hash del estado completo: compara máquinas o replays |
 | `log` | log de comandos de la sesión |
 | `camera oblique\|perspective` | vista oblicua ortográfica tipo Factorio (por defecto) o perspectiva libre |
-| `pixel <1-6>` · `retro [on\|off]` | escala de render 3D (1 = nativa) · filtro posterizado |
+| `pixel <1-6>` · `retro [on\|off]` | escala de render 3D (1 = nativa, por defecto) · filtro posterizado (apagado por defecto) |
 | `seed` · `new [seed]` · `save` · `load` · `overlay` · `clear` | |
 
 El **overlay F3** muestra el coste por sistema, estadísticas de pathfinding y todo lo que el sim sabe del tile bajo el ratón (tipo, cantidad, reserva, región, distancia al almacén).

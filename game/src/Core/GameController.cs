@@ -199,10 +199,15 @@ public partial class GameController : Node, IDebugHost
         set => _camera.SetMode(value ? CameraRig.ViewMode.Oblique : CameraRig.ViewMode.Perspective);
     }
 
+    /// <summary>1 = native resolution with MSAA (default). Higher = chunky pixel look (nearest upscale).</summary>
     public int PixelScale
     {
         get => _retroView.StretchShrink;
-        set => _retroView.StretchShrink = Math.Clamp(value, 1, 6);
+        set
+        {
+            _retroView.StretchShrink = Math.Clamp(value, 1, 6);
+            _retroView.TextureFilter = value > 1 ? CanvasItem.TextureFilterEnum.Nearest : CanvasItem.TextureFilterEnum.Linear;
+        }
     }
 
     public bool RetroFilter

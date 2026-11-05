@@ -1,10 +1,11 @@
-// Post filter for the low-resolution 3D view (applied on the SubViewportContainer).
+// Optional post filter for the 3D view (applied on the SubViewportContainer). Off by default:
+// the default look is clean low-poly at native resolution. Console: `pixel 3` + `retro on`.
 // The viewport already renders at 1/N resolution and is upscaled with nearest filtering;
 // this adds colour posterization with 4x4 ordered (Bayer) dithering in low-res pixel space,
 // which gives the "retro with style" look without real pixel art.
 shader_type canvas_item;
 
-uniform bool enabled = true;
+uniform bool enabled = false;
 uniform float levels : hint_range(2.0, 64.0) = 14.0;
 uniform float dither_strength : hint_range(0.0, 1.0) = 0.55;
 
