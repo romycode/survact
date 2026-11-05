@@ -49,12 +49,13 @@ game/                       Proyecto Godot. Solo presentación.
   data/balance.json         TODO el balance y las propiedades de terreno. Editable sin recompilar.
   scenes/                   Main.tscn compone World + UI + Debug. ui/Hud.tscn, debug/*.tscn.
   ui/theme.tres             Theme global (Project Settings → GUI → Theme).
-  i18n/strings.csv          Textos del jugador (es, en). Godot lo importa como traducciones.
+  i18n/                     gettext: strings.pot (plantilla generada) + un .po por idioma (es).
   src/Core/                 GameController (dueño del sim, timestep), carga de datos.
   src/Controls/             Acciones de input y bindings por defecto.
   src/World/                Renderers: terreno por chunk, colonos con MultiMesh, overlay, cámara.
   src/UI/                   HUD.
   src/Debug/                Consola, comandos de desarrollo, overlay F3.
+tools/i18n.py               Extrae textos de C# y escenas → .pot, actualiza los .po, comprueba traducciones.
 tools/gen_buildings.py      Generador procedural de sprites (arte de prototipo).
 ideas.md                    Backlog de ideas de diseño.
 ```
@@ -67,7 +68,7 @@ ideas.md                    Backlog de ideas de diseño.
 4. **Determinismo.** Solo `Pcg32` del sim, nada de `System.Random`, `DateTime` ni iterar `Dictionary`/`HashSet` para decidir. Lo vigilan los tests de determinismo y replay.
 5. **Godot: "call down, signal up".** Un nodo llama métodos de sus hijos; los hijos avisan con señales, conectadas en la escena. Nodos accedidos con nombres únicos (`%Nombre`), no rutas.
 6. **Layout y estilo en escenas y Theme**, no en código. Los scripts de UI solo rellenan datos.
-7. **Textos del jugador con `Tr("CLAVE")`** y la clave en `i18n/strings.csv`. Nunca strings literales en la UI. (La consola de desarrollo es en inglés y no se traduce.)
+7. **Textos del jugador con `Tr("English text")` / `TrN("singular", "plural", n)`, siempre con literales**: la clave es el texto en inglés y el extractor solo ve literales (`Tr(variable)` no se puede traducir). Nota para traductores con `// TRANSLATORS: ...` en la línea anterior. Labels cuyo texto pone el código: `auto_translate_mode = 2` en la escena. La consola de desarrollo es en inglés y no se traduce.
 8. **Nunca un Node por entidad.** MultiMesh para entidades, textura por chunk para terreno.
 9. **Datos en arrays, lógica en sistemas.** IA con presupuesto por tick, nunca proporcional a la población.
 10. **Todo estado nuevo entra en SaveGame y StateHasher** y sube `SaveGame.Version` si cambia el formato.
@@ -88,6 +89,16 @@ ideas.md                    Backlog de ideas de diseño.
 | `seed` · `new [seed]` · `save` · `load` · `overlay` · `clear` | |
 
 El **overlay F3** muestra el coste por sistema, estadísticas de pathfinding y todo lo que el sim sabe del tile bajo el ratón (tipo, cantidad, reserva, región, distancia al almacén).
+
+## Traducciones (gettext)
+
+```bash
+python3 tools/i18n.py update      # tras tocar textos: regenera strings.pot y fusiona en cada .po
+python3 tools/i18n.py check       # falla (exit 1) si hay textos sin traducir o fuzzy
+python3 tools/i18n.py init fr     # nuevo idioma → game/i18n/fr.po; añádelo en Project Settings → Localization
+```
+
+Los `.po` se editan con cualquier herramienta estándar (Poedit, Weblate, Crowdin…). Lo que falte por traducir se muestra en inglés.
 
 ## Exportar
 

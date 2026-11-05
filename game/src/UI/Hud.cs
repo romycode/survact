@@ -7,7 +7,8 @@ namespace Survact.Game.UI;
 
 /// <summary>
 /// Gameplay HUD. Layout and style live in Hud.tscn and ui/theme.tres; this script only fills text.
-/// All player-facing strings go through Tr() (keys in i18n/strings.csv).
+/// All player-facing strings go through Tr() with a string LITERAL (English source text) so
+/// tools/i18n.py can extract them. Translations: game/i18n/*.po.
 /// </summary>
 public partial class Hud : CanvasLayer
 {
@@ -53,12 +54,14 @@ public partial class Hud : CanvasLayer
         var col = sim.Colony;
 
         _sb.Clear()
-            .Append($"{Tr("HUD_DAY")} {sim.Day + 1,-3} {minutes / 60:00}:{minutes % 60:00}   {sim.Temperature,6:F1}°C\n")
-            .Append($"{Tr("HUD_WOOD")} {col.Wood,-6} {Tr("HUD_FOOD")} {col.Food,-6}\n")
-            .Append($"{Tr("HUD_ALIVE")} {sim.Colonists.Count,-5} {Tr("HUD_DEAD")} {col.Deaths,-5}\n")
-            .Append($"{Tr("HUD_HEATER")} {Tr(col.HeaterLit ? "HUD_ON" : "HUD_OFF")}   {Tr("HUD_SPEED")} x{speed}")
-            .Append(paused ? $"  {Tr("HUD_PAUSED")}" : "")
-            .Append($"\n{Tr("HUD_SIM")} {simMs,5:F2} ms   FPS {fps,4:F0}");
+            // TRANSLATORS: HUD labels are short and uppercase; keep them under ~10 characters.
+            .Append($"{Tr("DAY")} {sim.Day + 1,-3} {minutes / 60:00}:{minutes % 60:00}   {sim.Temperature,6:F1}°C\n")
+            .Append($"{Tr("WOOD")} {col.Wood,-6} {Tr("FOOD")} {col.Food,-6}\n")
+            .Append($"{Tr("ALIVE")} {sim.Colonists.Count,-5} {Tr("DEAD")} {col.Deaths,-5}\n")
+            // TRANSLATORS: state of the heater, shown after "HEATER".
+            .Append($"{Tr("HEATER")} {(col.HeaterLit ? Tr("ON") : Tr("OFF"))}   {Tr("SPEED")} x{speed}")
+            .Append(paused ? $"  {Tr("PAUSED")}" : "")
+            .Append($"\n{Tr("SIM")} {simMs,5:F2} ms   FPS {fps,4:F0}");
 
         _stats.Text = _sb.ToString();
     }
@@ -66,17 +69,18 @@ public partial class Hud : CanvasLayer
     /// <summary>Help line built from the live bindings: if a key is rebound, the hint follows.</summary>
     private void RefreshHelp()
     {
-        (StringName Action, string Key)[] entries =
+        // TRANSLATORS: key hints in the bottom bar, shown after the key name ("W move camera").
+        (StringName Action, string Label)[] entries =
         [
-            (Actions.CameraUp, "HELP_CAMERA"),
-            (Actions.Pause, "HELP_PAUSE"),
-            (Actions.Speed1, "HELP_SPEED"),
-            (Actions.QuickSave, "HELP_SAVE"),
-            (Actions.QuickLoad, "HELP_LOAD"),
-            (Actions.NewWorld, "HELP_NEW_WORLD"),
-            (Actions.DebugConsole, "HELP_CONSOLE"),
-            (Actions.DebugOverlay, "HELP_DEBUG"),
+            (Actions.CameraUp, Tr("move camera")),
+            (Actions.Pause, Tr("pause")),
+            (Actions.Speed1, Tr("speed (1/2/3)")),
+            (Actions.QuickSave, Tr("save")),
+            (Actions.QuickLoad, Tr("load")),
+            (Actions.NewWorld, Tr("new world")),
+            (Actions.DebugConsole, Tr("console")),
+            (Actions.DebugOverlay, Tr("debug")),
         ];
-        _help.Text = string.Join("   ", entries.Select(e => $"{InputBindings.LabelOf(e.Action)} {Tr(e.Key)}"));
+        _help.Text = string.Join("   ", entries.Select(e => $"{InputBindings.LabelOf(e.Action)} {e.Label}"));
     }
 }

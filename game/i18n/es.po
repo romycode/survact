@@ -1,0 +1,110 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: Survact\n"
+"PO-Revision-Date: 2026-11-05 20:17+0000\n"
+"Language: es\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+#: game/src/Core/GameController.cs:150
+msgid "New world"
+msgstr "Mundo nuevo"
+
+#: game/src/Core/GameController.cs:157
+msgid "Game saved"
+msgstr "Partida guardada"
+
+#: game/src/Core/GameController.cs:165
+msgid "No saved game yet"
+msgstr "No hay partida guardada"
+
+#: game/src/Core/GameController.cs:177
+msgid "The saved game is not compatible with this version"
+msgstr "La partida guardada no es compatible con esta versión"
+
+#: game/src/Core/GameController.cs:181
+msgid "Game loaded"
+msgstr "Partida cargada"
+
+#. HUD labels are short and uppercase; keep them under ~10 characters.
+#: game/src/UI/Hud.cs:58
+msgid "DAY"
+msgstr "DÍA"
+
+#: game/src/UI/Hud.cs:59
+msgid "WOOD"
+msgstr "MADERA"
+
+#: game/src/UI/Hud.cs:59
+msgid "FOOD"
+msgstr "COMIDA"
+
+#: game/src/UI/Hud.cs:60
+msgid "ALIVE"
+msgstr "VIVOS"
+
+#: game/src/UI/Hud.cs:60
+msgid "DEAD"
+msgstr "MUERTOS"
+
+#. state of the heater, shown after "HEATER".
+#: game/src/UI/Hud.cs:62
+msgid "HEATER"
+msgstr "CALEFACTOR"
+
+#. state of the heater, shown after "HEATER".
+#: game/src/UI/Hud.cs:62
+msgid "ON"
+msgstr "ENCENDIDO"
+
+#. state of the heater, shown after "HEATER".
+#: game/src/UI/Hud.cs:62
+msgid "OFF"
+msgstr "APAGADO"
+
+#. state of the heater, shown after "HEATER".
+#: game/src/UI/Hud.cs:62
+msgid "SPEED"
+msgstr "VELOCIDAD"
+
+#: game/src/UI/Hud.cs:63
+msgid "PAUSED"
+msgstr "PAUSA"
+
+#: game/src/UI/Hud.cs:64
+msgid "SIM"
+msgstr "SIM"
+
+#: game/src/UI/Hud.cs:75
+msgid "move camera"
+msgstr "mover cámara"
+
+#: game/src/UI/Hud.cs:76
+msgid "pause"
+msgstr "pausa"
+
+#: game/src/UI/Hud.cs:77
+msgid "speed (1/2/3)"
+msgstr "velocidad (1/2/3)"
+
+#: game/src/UI/Hud.cs:78
+msgid "save"
+msgstr "guardar"
+
+#: game/src/UI/Hud.cs:79
+msgid "load"
+msgstr "cargar"
+
+#: game/src/UI/Hud.cs:80
+msgid "new world"
+msgstr "mundo nuevo"
+
+#: game/src/UI/Hud.cs:81
+msgid "console"
+msgstr "consola"
+
+#: game/src/UI/Hud.cs:82
+msgid "debug"
+msgstr "debug"

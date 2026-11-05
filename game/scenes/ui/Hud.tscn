@@ -24,10 +24,12 @@ mouse_filter = 2
 
 [node name="Stats" type="Label" parent="Root/StatsPanel"]
 unique_name_in_owner = true
+auto_translate_mode = 2
 layout_mode = 2
 
 [node name="Notification" type="Label" parent="Root"]
 unique_name_in_owner = true
+auto_translate_mode = 2
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0
@@ -41,6 +43,7 @@ theme_type_variation = &"AccentLabel"
 
 [node name="Help" type="Label" parent="Root"]
 unique_name_in_owner = true
+auto_translate_mode = 2
 layout_mode = 1
 anchors_preset = 2
 anchor_top = 1.0

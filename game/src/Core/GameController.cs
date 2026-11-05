@@ -147,14 +147,14 @@ public partial class GameController : Node, IDebugHost
     {
         uint s = seed ?? (uint)Time.GetTicksUsec();
         StartWorld(Simulation.Create(new SimSettings(s, MapSize, MapSize, StartColonists), Data));
-        _hud.Notify(Tr("MSG_NEW_WORLD"));
+        _hud.Notify(Tr("New world"));
     }
 
     public void QuickSave()
     {
         using var file = System.IO.File.Create(ProjectSettings.GlobalizePath(SavePath));
         SaveGame.Save(Sim, file);
-        _hud.Notify(Tr("MSG_SAVED"));
+        _hud.Notify(Tr("Game saved"));
     }
 
     public bool QuickLoad()
@@ -162,7 +162,7 @@ public partial class GameController : Node, IDebugHost
         string path = ProjectSettings.GlobalizePath(SavePath);
         if (!System.IO.File.Exists(path))
         {
-            _hud.Notify(Tr("MSG_NO_SAVE"));
+            _hud.Notify(Tr("No saved game yet"));
             return false;
         }
 
@@ -174,11 +174,11 @@ public partial class GameController : Node, IDebugHost
         catch (InvalidDataException e)
         {
             GD.PushWarning($"Quickload failed: {e.Message}");
-            _hud.Notify(Tr("MSG_SAVE_INCOMPATIBLE"));
+            _hud.Notify(Tr("The saved game is not compatible with this version"));
             return false;
         }
 
-        _hud.Notify(Tr("MSG_LOADED"));
+        _hud.Notify(Tr("Game loaded"));
         return true;
     }
 

@@ -25,8 +25,9 @@ theme/custom="res://ui/theme.tres"
 
 [internationalization]
 
-locale/translations=PackedStringArray("res://i18n/strings.es.translation", "res://i18n/strings.en.translation")
-locale/fallback="es"
+; gettext. Source language is English (msgid = English text); add one .po per language.
+locale/translations=PackedStringArray("res://i18n/es.po")
+locale/fallback="en"
 
 [rendering]
 
