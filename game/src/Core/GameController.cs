@@ -193,6 +193,12 @@ public partial class GameController : Node, IDebugHost
     public void FocusTile(int x, int y) =>
         _camera.CenterOn(new Vector3(x + 0.5f, TerrainMesher.GroundAt(Sim.Map, x, y), y + 0.5f));
 
+    public float CameraPitch
+    {
+        get => _camera.ObliquePitch;
+        set => _camera.ObliquePitch = Mathf.Clamp(value, 20f, 85f);
+    }
+
     public bool ObliqueCamera
     {
         get => _camera.Mode == CameraRig.ViewMode.Oblique;

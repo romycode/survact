@@ -34,6 +34,7 @@ public static class DebugCommands
         ["pixel"] = new("pixel <1-6>", "3D render scale (1 = native, 3 = default retro)", (a, h) => { h.PixelScale = Math.Clamp(Int(a[0]), 1, 6); return $"pixel scale {h.PixelScale}"; }),
         ["retro"] = new("retro [on|off]", "toggle the posterize/dither filter", Retro),
         ["camera"] = new("camera <oblique|perspective>", "oblique = Factorio-like ortho, Q/E 90° steps; perspective = free orbit", CameraMode),
+        ["pitch"] = new("pitch <20-85>", "oblique camera tilt above the horizon (default 40; lower = more 3D)", (a, h) => { h.CameraPitch = float.Parse(a[0], CultureInfo.InvariantCulture); return $"pitch {h.CameraPitch:F0}°"; }),
         ["overlay"] = new("overlay", "toggle the debug overlay (also F3)", (_, h) => { h.ToggleDebugOverlay(); return "ok"; }),
         ["clear"] = new("clear", "clear the console", (_, h) => { h.ClearConsole(); return ""; }),
     };

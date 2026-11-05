@@ -25,4 +25,7 @@ public interface IDebugHost
 
     /// <summary>true = oblique orthographic (Factorio-like), false = free perspective orbit.</summary>
     bool ObliqueCamera { get; set; }
+
+    /// <summary>Camera tilt in degrees above the horizon (oblique mode).</summary>
+    float CameraPitch { get; set; }
 }

@@ -18,8 +18,8 @@ public partial class CameraRig : Node3D
     [Export] public ViewMode Mode { get; set; } = ViewMode.Oblique;
 
     [ExportGroup("Oblique")]
-    [Export] public float ObliquePitch { get; set; } = 60f;    // degrees above the horizon
-    [Export] public float ViewHeight { get; set; } = 22f;      // world units visible vertically
+    [Export] public float ObliquePitch { get; set; } = 40f;    // degrees above the horizon: lower = more side faces, more 3D
+    [Export] public float ViewHeight { get; set; } = 20f;      // world units visible vertically
     [Export] public float MinViewHeight { get; set; } = 8f;
     [Export] public float MaxViewHeight { get; set; } = 90f;
 

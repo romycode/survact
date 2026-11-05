@@ -100,7 +100,7 @@ respetan el A*, las regiones y el flow field (hay test). Hace más frío arriba:
 | `goto x y` | centra la cámara |
 | `hash` | hash del estado completo: compara máquinas o replays |
 | `log` | log de comandos de la sesión |
-| `camera oblique\|perspective` | vista oblicua ortográfica tipo Factorio (por defecto) o perspectiva libre |
+| `camera oblique\|perspective` · `pitch <20-85>` | vista oblicua ortográfica tipo Factorio (por defecto) o perspectiva libre · inclinación (40° por defecto) |
 | `pixel <1-6>` · `retro [on\|off]` | escala de render 3D (1 = nativa, por defecto) · filtro posterizado (apagado por defecto) |
 | `seed` · `new [seed]` · `save` · `load` · `overlay` · `clear` | |
 
