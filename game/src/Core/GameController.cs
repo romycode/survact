@@ -194,7 +194,7 @@ public partial class GameController : Node, IDebugHost
     public void ClearConsole() => _console.ClearLog();
 
     public void FocusTile(int x, int y) =>
-        _camera.CenterOn(new Vector3(x + 0.5f, TerrainMesher.GroundAt(Sim.Map, x, y), y + 0.5f));
+        _camera.CenterOn(new Vector3(x + 0.5f, TerrainMesher.SurfaceAt(Sim.Map, x + 0.5f, y + 0.5f), y + 0.5f));
 
     public float CameraPitch
     {
@@ -236,11 +236,7 @@ public partial class GameController : Node, IDebugHost
         Sim.CommandRejected += OnCommandRejected;
         _accumulator = 0;
 
-        _camera.GroundHeight = (x, z) =>
-        {
-            int tx = Mathf.FloorToInt(x), tz = Mathf.FloorToInt(z);
-            return sim.Map.InBounds(tx, tz) ? TerrainMesher.HeightAt(sim.Map, tx, tz) : 0f;
-        };
+        _camera.GroundHeight = (x, z) => TerrainMesher.SurfaceAt(sim.Map, x, z);
         _terrain.Bind(sim);
         _vegetation.Bind(sim);
         _colonists.Bind(sim);

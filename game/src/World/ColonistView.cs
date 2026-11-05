@@ -42,7 +42,7 @@ public partial class ColonistView : MultiMeshInstance3D
             Array.Resize(ref _yaw, _mesh.InstanceCount);
             Array.Resize(ref _height, _mesh.InstanceCount);
         }
-        float follow = 1f - Mathf.Exp(-14f * (float)delta); // ease up/down terrace steps instead of snapping
+        float follow = 1f - Mathf.Exp(-20f * (float)delta); // ramps are continuous; this only softens cliff-edge teleports
         _mesh.VisibleInstanceCount = n;
 
         for (int i = 0; i < n; i++)
@@ -52,8 +52,7 @@ public partial class ColonistView : MultiMeshInstance3D
 
             float x = c.PrevX[i] + dx * alpha;
             float z = c.PrevY[i] + dz * alpha;
-            int tx = Math.Clamp((int)x, 0, map.Width - 1), tz = Math.Clamp((int)z, 0, map.Height - 1);
-            float ground = TerrainMesher.GroundAt(map, tx, tz);
+            float ground = TerrainMesher.SurfaceAt(map, x, z);
             _height[i] = Mathf.Abs(_height[i] - ground) > 3f ? ground : Mathf.Lerp(_height[i], ground, follow);
 
             _mesh.SetInstanceTransform(i, new Transform3D(new Basis(Vector3.Up, _yaw[i]), new Vector3(x, _height[i], z)));

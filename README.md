@@ -58,7 +58,8 @@ game/                       Proyecto Godot. Solo presentación.
   src/Core/                 GameController (dueño del sim, timestep), carga de datos.
   src/World/                Vistas 3D: terreno por chunk, vegetación y colonos con MultiMesh,
                             generador, luz día/noche (LightingRig), cámara orbital (CameraRig).
-  src/World/Geometry/       Generación de mallas low-poly en C# puro (sin Godot): verificable headless.
+  src/World/Geometry/       Mallas low-poly en C# puro (sin Godot): terreno con alturas por esquina
+                            (rampas + acantilados), pinos, arbustos, peñascos, colonos.
   src/Controls/             Acciones de input y bindings por defecto.
   src/UI/                   HUD.
   src/Debug/                Consola, comandos de desarrollo, overlay F3.
@@ -69,7 +70,9 @@ ideas.md                    Backlog de ideas de diseño.
 ## Terreno
 
 Terrazas de altura entera (0–10) generadas con ruido: cordilleras con crestas y nieve perpetua en las
-cumbres, mesetas con escarpes y rampas naturales, lagos en los valles. Moverse un nivel arriba o abajo
+cumbres, mesetas con escarpes y rampas naturales, colinas suaves y lagos en los valles. En el render,
+los escalones de un nivel (caminables) se dibujan como **rampas/laderas** y los de 2+ niveles como
+**paredes de roca verticales**: lo que parece transitable lo es. Moverse un nivel arriba o abajo
 cuesta extra (`terrain.climb_*_cost`); **dos niveles o más es un acantilado infranqueable**, y lo
 respetan el A*, las regiones y el flow field (hay test). Hace más frío arriba:
 `terrain.lapse_rate_per_level` grados por nivel sobre la temperatura del valle.

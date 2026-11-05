@@ -33,7 +33,7 @@ public partial class HeaterView : Node3D
     public void Bind(Simulation sim)
     {
         _sim = sim;
-        float ground = Geometry.TerrainMesher.GroundAt(sim.Map, sim.Colony.StockX, sim.Colony.StockY);
+        float ground = Geometry.TerrainMesher.SurfaceAt(sim.Map, sim.Colony.StockX + 0.5f, sim.Colony.StockY + 0.5f);
         Position = new Vector3(sim.Colony.StockX + 0.5f, ground, sim.Colony.StockY + 0.5f);
         float k = sim.Balance.HeatRadius / RingModelRadius;
         _ring.Scale = new Vector3(k, 1, k);

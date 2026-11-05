@@ -6,7 +6,7 @@ using Survact.Sim.World;
 namespace Survact.Game.World;
 
 /// <summary>
-/// Trees and bushes as one MultiMesh per chunk and species: a forest is a handful of draw calls,
+/// Trees, bushes and boulders as one MultiMesh per chunk and species: a forest is a handful of draw calls,
 /// and when a tree is cut only its chunk's instance list is rewritten.
 /// Next step if dense maps get heavy: distance-based LOD (impostor quads far from the camera).
 /// </summary>
@@ -16,6 +16,7 @@ public partial class VegetationView : Node3D
     [
         (Tile.Tree, LowPoly.Pine),
         (Tile.Bush, LowPoly.Bush),
+        (Tile.Rock, LowPoly.Boulder),
     ];
 
     private Simulation? _sim;

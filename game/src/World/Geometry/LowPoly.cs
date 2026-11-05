@@ -34,6 +34,40 @@ public static class LowPoly
         return m;
     }
 
+    // Boulder: lumpy low-poly rock. Upward faces collect snow (kind Foliage) in the cold.
+    public static MeshData Boulder()
+    {
+        var m = new MeshData();
+        var stone = SurfaceKind.Rgb(0.47f, 0.46f, 0.47f, SurfaceKind.Foliage);
+        const int sides = 7;
+        // Rings (height, radius); per-vertex radial jitter makes it irregular but deterministic.
+        (float Y, float R)[] rings = [(-0.05f, 0.40f), (0.22f, 0.46f), (0.48f, 0.32f)];
+        var top = new Vector3(0.03f, 0.62f, -0.02f);
+        var bottom = new Vector3(0, -0.05f, 0);
+        Vector3 V(int ring, int i)
+        {
+            float a = MathF.Tau * i / sides + ring * 0.4f;
+            float jitter = 0.78f + 0.44f * Fract(MathF.Sin(ring * 12.9898f + i * 78.233f) * 43758.547f);
+            return new Vector3(MathF.Cos(a) * rings[ring].R * jitter, rings[ring].Y, MathF.Sin(a) * rings[ring].R * jitter);
+        }
+        for (int i = 0; i < sides; i++)
+        {
+            for (int r = 0; r < rings.Length - 1; r++)
+            {
+                var a = V(r, i); var b = V(r, i + 1); var c = V(r + 1, i + 1); var d = V(r + 1, i);
+                var mid = (a + b + c + d) / 4;
+                m.Triangle(a, b, c, stone, mid with { Y = mid.Y - 0.25f });
+                m.Triangle(a, c, d, stone, mid with { Y = mid.Y - 0.25f });
+            }
+            var ta = V(rings.Length - 1, i); var tb = V(rings.Length - 1, i + 1);
+            m.Triangle(ta, tb, top, stone, new Vector3((ta.X + tb.X) / 2, 0.6f, (ta.Z + tb.Z) / 2));
+            m.Triangle(V(0, i + 1), V(0, i), bottom, stone, -Vector3.UnitY);
+        }
+        return m;
+
+        static float Fract(float v) => v - MathF.Floor(v);
+    }
+
     // Colonist: blocky body + head. White so the per-instance color (job/state) shows as-is.
     public static MeshData Colonist()
     {
