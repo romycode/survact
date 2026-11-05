@@ -1,0 +1,25 @@
+; Engine configuration file.
+; Open this folder with the Godot 4.7 .NET editor.
+
+config_version=5
+
+[application]
+
+config/name="Survact"
+run/main_scene="res://Main.tscn"
+config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="disabled"
+
+[dotnet]
+
+project/assembly_name="Survact.Game"
+
+[rendering]
+
+textures/canvas_textures/default_texture_filter=0
+2d/snap/snap_2d_transforms_to_pixel=true

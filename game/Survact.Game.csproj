@@ -1,0 +1,11 @@
+<Project Sdk="Godot.NET.Sdk/4.7.1">
+  <!-- Keep the Sdk version equal to your Godot editor version. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <EnableDynamicLoading>true</EnableDynamicLoading>
+    <RootNamespace>Survact.Game</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../src/Survact.Sim/Survact.Sim.csproj" />
+  </ItemGroup>
+</Project>

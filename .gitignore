@@ -1,3 +1,7 @@
-node_modules
-dist
-*.log
+bin/
+obj/
+.godot/
+*.user
+.vs/
+.idea/
+*.DotSettings.user
