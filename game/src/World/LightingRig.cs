@@ -12,9 +12,15 @@ public partial class LightingRig : Node3D
 {
     private static readonly StringName FrostGlobal = "survact_frost";
 
-    [Export] public float MaxSunElevation { get; set; } = 62f;
+    [Export] public float MaxSunElevation { get; set; } = 45f; // low sun = long shadows = more depth
     [Export] public float SunEnergy { get; set; } = 1.0f;
     [Export] public float MoonEnergy { get; set; } = 0.22f;
+
+    /// <summary>
+    /// Fog multiplier. Perspective wants real aerial perspective (distance haze is a strong depth
+    /// cue); an orthographic camera sits ~80 units away from everything, where fog is just a tint.
+    /// </summary>
+    [Export] public float FogScale { get; set; } = 1f;
 
     private static readonly Color DaySky = new(0.66f, 0.74f, 0.83f);
     private static readonly Color NightSky = new(0.04f, 0.06f, 0.11f);
@@ -57,7 +63,7 @@ public partial class LightingRig : Node3D
         var sky = NightSky.Lerp(DaySky, day);
         _env.BackgroundColor = sky;
         _env.FogLightColor = sky.Lerp(new Color(0.85f, 0.88f, 0.94f), frost * 0.5f * day);
-        _env.FogDensity = 0.0008f + frost * 0.0035f; // camera boom is ~80 units in oblique mode: keep it a tint, not a wall
+        _env.FogDensity = (0.0008f + frost * 0.0035f) * FogScale;
         _env.AmbientLightColor = NightAmbient.Lerp(DayAmbient, day);
         _env.AmbientLightEnergy = 0.48f + 0.27f * day;
 

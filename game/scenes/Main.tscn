@@ -91,7 +91,7 @@ unique_name_in_owner = true
 script = ExtResource("8_camera")
 
 [node name="Camera" type="Camera3D" parent="RetroView/Viewport3D/World/CameraRig"]
-fov = 35.0
+fov = 45.0
 near = 0.5
 far = 400.0
 

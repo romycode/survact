@@ -1,7 +1,7 @@
 # Survact
 
 Colony survival en frío extremo (Frostpunk + Rimworld + Factorio + ...). Godot 4.7 + C# / .NET 10.
-Vista 3D low-poly limpia (resolución nativa, MSAA, caras planas, sombras) con cámara oblicua tipo Factorio.
+Vista 3D low-poly limpia (resolución nativa, MSAA, caras planas, sombras) con cámara en perspectiva; vista oblicua tipo Factorio disponible.
 
 ## Requisitos
 
@@ -24,7 +24,7 @@ dotnet run -c Release --project tests/Survact.Sim.Tests -- replay   # filtrar po
 | Acción | Tecla |
 |---|---|
 | Mover cámara | WASD / flechas · botón central arrastra |
-| Rotar cámara | Q / E (vista oblicua: giros de 90°) |
+| Rotar cámara | Q / E (en vista oblicua: giros de 90°) |
 | Zoom | rueda · `=` / `-` |
 | Pausa · velocidad x1/x3/x10 | Espacio · 1 / 2 / 3 |
 | Guardar · cargar | F5 · F9 |
@@ -100,7 +100,7 @@ respetan el A*, las regiones y el flow field (hay test). Hace más frío arriba:
 | `goto x y` | centra la cámara |
 | `hash` | hash del estado completo: compara máquinas o replays |
 | `log` | log de comandos de la sesión |
-| `camera oblique\|perspective` · `pitch <20-85>` | vista oblicua ortográfica tipo Factorio (por defecto) o perspectiva libre · inclinación (40° por defecto) |
+| `camera perspective\|oblique` · `pitch <20-85>` | perspectiva (por defecto) u oblicua ortográfica tipo Factorio · inclinación de la vista oblicua |
 | `pixel <1-6>` · `retro [on\|off]` | escala de render 3D (1 = nativa, por defecto) · filtro posterizado (apagado por defecto) |
 | `seed` · `new [seed]` · `save` · `load` · `overlay` · `clear` | |
 

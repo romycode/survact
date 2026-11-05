@@ -5,6 +5,7 @@ namespace Survact.Sim.World;
 ///   lowland  — lakes on the plains;
 ///   range    — low-frequency mask deciding where mountain ranges are;
 ///   ridge    — sharp crests inside a range (|2n-1| inverted);
+///   hills    — gentle 1–2 level swells on the plains;
 ///   plateau  — mesas: plains raised 2–3 levels at once, so their edges are cliffs (escarpments);
 ///   ramp     — where a mesa edge breaks into a one-level ledge you can walk up;
 ///   moisture — forests and berry bushes.
@@ -42,7 +43,7 @@ public static class WorldGen
             float jitter = Hash(x, y, seed ^ 0x85EBCA6Bu);
 
             Tile tile;
-            if (level == 0 && lowland < 0.30f && plateau <= PlateauEdge - 0.03f) tile = Tile.Water;
+            if (level == 0 && lowland < 0.30f && plateau <= PlateauEdge - 0.03f && raw[index] == 0) tile = Tile.Water;
             else if (level >= SnowcapLevel) tile = Tile.Snow;
             else if (level >= 4 && jitter < 0.01f + level * 0.008f) tile = Tile.Rock;
             else if (level <= TreelineLevel && moisture > 0.58f && jitter < 0.6f) tile = Tile.Tree;
@@ -62,6 +63,10 @@ public static class WorldGen
         // ridge² narrows the crests: peaks and spurs instead of broad flat summits.
         float height = mountain * (0.35f + 0.65f * ridge * ridge);
         int level = (int)(height * (TileMap.MaxLevel + 0.99f));
+
+        // Rolling hills on the plains: 1-2 gentle levels so lowland isn't a flat sheet.
+        float hills = Fbm(x / 26f, y / 26f, seed ^ 0x7F4A7C15u, 3);
+        if (hills > 0.58f) level += hills > 0.68f ? 2 : 1;
 
         // Mesas: a sharp threshold on the plateau field makes vertical escarpments; a thin band
         // just below it becomes a one-level ledge only where the ramp field allows: natural ramps.

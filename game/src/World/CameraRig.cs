@@ -5,17 +5,18 @@ namespace Survact.Game.World;
 
 /// <summary>
 /// Strategy camera: a pivot on the ground with a Camera3D on a boom. Two modes:
-///  - Oblique (default): top-down oblique view like Factorio — orthographic (no perspective, every
-///    tile the same size anywhere on screen), fixed tilt, grid-aligned. Q/E turn it in 90° steps so
-///    cliffs and mountains never permanently hide what's behind them.
-///  - Perspective: free orbit, narrow FOV diorama.
+///  - Perspective (default): the ground recedes and converges toward the horizon, which is what
+///    makes a 3D world read as a floor and not as a wall climbing up the screen. Q/E orbit.
+///  - Oblique: Factorio-like orthographic view (no perspective, grid-aligned, Q/E in 90° steps).
+///    Great for dense building, but with real relief the missing depth cues make the ground look
+///    tilted up toward the sky.
 /// Pan relative to the view, zoom, drag. Picking ray-marches the real terrain heights.
 /// </summary>
 public partial class CameraRig : Node3D
 {
     public enum ViewMode { Oblique, Perspective }
 
-    [Export] public ViewMode Mode { get; set; } = ViewMode.Oblique;
+    [Export] public ViewMode Mode { get; set; } = ViewMode.Perspective;
 
     [ExportGroup("Oblique")]
     [Export] public float ObliquePitch { get; set; } = 40f;    // degrees above the horizon: lower = more side faces, more 3D
@@ -24,8 +25,8 @@ public partial class CameraRig : Node3D
     [Export] public float MaxViewHeight { get; set; } = 90f;
 
     [ExportGroup("Perspective")]
-    [Export] public float Pitch { get; set; } = 52f;
-    [Export] public float Distance { get; set; } = 24f;
+    [Export] public float Pitch { get; set; } = 42f;
+    [Export] public float Distance { get; set; } = 30f;
     [Export] public float MinDistance { get; set; } = 8f;
     [Export] public float MaxDistance { get; set; } = 110f;
     [Export] public float RotateSpeed { get; set; } = 90f;     // degrees per second
@@ -57,7 +58,11 @@ public partial class CameraRig : Node3D
     {
         Mode = mode;
         ApplyMode();
+        ModeChanged?.Invoke(mode);
     }
+
+    /// <summary>Raised when the projection changes (lighting adapts fog to it).</summary>
+    public event Action<ViewMode>? ModeChanged;
 
     public override void _Process(double delta)
     {

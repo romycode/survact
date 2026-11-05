@@ -72,6 +72,9 @@ public partial class GameController : Node, IDebugHost
         _console = GetNode<DebugConsole>("%DebugConsole");
         _debugOverlay = GetNode<DebugOverlay>("%DebugOverlay");
 
+        _camera.ModeChanged += mode => _lighting.FogScale = FogScaleFor(mode);
+        _lighting.FogScale = FogScaleFor(_camera.Mode);
+
         try
         {
             Data = GameDataLoader.Load();
@@ -265,6 +268,9 @@ public partial class GameController : Node, IDebugHost
         // Can't keep up (debugger pause, hitch, too high a speed): drop the debt instead of spiralling.
         if (steps == MaxStepsPerFrame && _accumulator > TickDt) _accumulator = 0;
     }
+
+    private static float FogScaleFor(CameraRig.ViewMode mode) =>
+        mode == CameraRig.ViewMode.Perspective ? 5f : 1f;
 
     private Vector2I? HoveredTile()
     {

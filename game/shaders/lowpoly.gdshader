@@ -64,6 +64,10 @@ void fragment() {
 		if (frost > 0.5) col = ice_color;
 	}
 
+	// Hemispheric shading: faces lit by the open sky (up) are brighter than walls, walls brighter
+	// than undersides. Makes form readable from any angle, independent of the sun.
+	col *= mix(0.72, 1.0, clamp(world_normal.y * 0.5 + 0.5, 0.0, 1.0));
+
 	ALBEDO = col;
 	ROUGHNESS = 1.0;
 	EMISSION = emission_color * emission_energy;
