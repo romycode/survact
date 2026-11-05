@@ -64,7 +64,7 @@ public sealed class Regions
 
         for (int seed = 0; seed < _map.Count; seed++)
         {
-            if (_id[seed] != None || !TileRules.Walkable(_map.Get(seed))) continue;
+            if (_id[seed] != None || !_map.Rules.Walkable(_map.Get(seed))) continue;
 
             int region = _sizes.Count;
             int head = 0, tail = 0, size = 0;
@@ -85,7 +85,7 @@ public sealed class Regions
 
             void Visit(int n)
             {
-                if (_id[n] != None || !TileRules.Walkable(_map.Get(n))) return;
+                if (_id[n] != None || !_map.Rules.Walkable(_map.Get(n))) return;
                 _id[n] = region;
                 _queue[tail++] = n;
             }

@@ -1,4 +1,6 @@
 using System.Runtime.InteropServices;
+using Survact.Sim.Commands;
+using Survact.Sim.Data;
 using Survact.Sim.Entities;
 using Survact.Sim.World;
 
@@ -7,11 +9,14 @@ namespace Survact.Sim.Persistence;
 /// <summary>
 /// Binary save format. Because the sim is plain data, a save is a straight dump of its arrays.
 /// Bump <see cref="Version"/> on any layout change and add a migration in <see cref="Load"/>.
+/// Game data (balance) is NOT stored: a save loads with the current data, so balance patches
+/// apply to existing saves, as players expect.
+/// v2: climate offset + pending commands.
 /// </summary>
 public static class SaveGame
 {
     private const uint Magic = 0x54565253; // "SRVT"
-    public const int Version = 1;
+    public const int Version = 2;
 
     public static void Save(Simulation sim, Stream stream)
     {
@@ -24,6 +29,7 @@ public static class SaveGame
 
         w.Write(sim.Tick);
         w.Write(sim.Temperature);
+        w.Write(sim.ClimateOffset);
         w.Write(sim.ThinkCursor);
         sim.Rng.Write(w);
 
@@ -49,9 +55,16 @@ public static class SaveGame
         WriteSpan<int>(w, c.Carry.AsSpan(0, n));
         WriteSpan<int>(w, c.PathLength.AsSpan(0, n)); WriteSpan<int>(w, c.PathPos.AsSpan(0, n));
         for (int i = 0; i < n; i++) WriteSpan<int>(w, c.Path.AsSpan(i * Colonists.MaxPathLength, c.PathLength[i]));
+
+        // Commands queued but not yet applied (saved between two ticks).
+        w.Write(sim.PendingCommands.Count);
+        foreach (var cmd in sim.PendingCommands)
+        {
+            w.Write((byte)cmd.Kind); w.Write(cmd.A); w.Write(cmd.B); w.Write(cmd.C);
+        }
     }
 
-    public static Simulation Load(Stream stream)
+    public static Simulation Load(Stream stream, GameData data)
     {
         using var r = new BinaryReader(stream, System.Text.Encoding.UTF8, leaveOpen: true);
         if (r.ReadUInt32() != Magic) throw new InvalidDataException("Not a Survact save.");
@@ -61,10 +74,11 @@ public static class SaveGame
         var settings = new SimSettings(r.ReadUInt32(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32());
         long tick = r.ReadInt64();
         float temperature = r.ReadSingle();
+        float climateOffset = r.ReadSingle();
         int thinkCursor = r.ReadInt32();
         var rng = Pcg32.Read(r);
 
-        var map = new TileMap(settings.Width, settings.Height);
+        var map = new TileMap(settings.Width, settings.Height, data.Tiles);
         ReadSpan<Tile>(r, map.Tiles);
         ReadSpan<ushort>(r, map.Amount);
         ReadSpan<bool>(r, map.Reserved);
@@ -90,13 +104,20 @@ public static class SaveGame
         ReadSpan<int>(r, c.PathLength.AsSpan(0, n)); ReadSpan<int>(r, c.PathPos.AsSpan(0, n));
         for (int i = 0; i < n; i++) ReadSpan<int>(r, c.Path.AsSpan(i * Colonists.MaxPathLength, c.PathLength[i]));
 
-        var sim = new Simulation(settings, map, c, colony, rng)
+        int pendingCount = r.ReadInt32();
+        var pending = new List<Command>(pendingCount);
+        for (int i = 0; i < pendingCount; i++)
+            pending.Add(new Command((CommandKind)r.ReadByte(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32()));
+
+        var sim = new Simulation(settings, data, map, c, colony, rng)
         {
             Tick = tick,
             Temperature = temperature,
+            ClimateOffset = climateOffset,
             ThinkCursor = thinkCursor,
         };
         exhausted.CopyTo(sim.SearchExhaustedUntil.AsSpan());
+        sim.RestorePending(pending);
         return sim;
     }
 

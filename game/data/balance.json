@@ -1,0 +1,59 @@
+{
+  // Authored in human units (seconds, days, tiles). The loader converts to per-tick values.
+  // Unknown or missing fields are a load error: typos never fail silently.
+  "day_length_seconds": 240,
+
+  "climate": {
+    "start_temperature": 6,
+    "drop_per_day": 3,
+    "daily_swing": 5,
+    "min_temperature": -45,
+    "comfort_temperature": 10
+  },
+
+  "needs": {
+    "hunger_days_to_empty": 1.5,
+    "eat_below": 0.35,
+    "warm_below": 0.35,
+    "warm_enough": 0.95,
+    "cold_loss_per_degree_per_day": 0.0556,
+    "heater_warmth_per_second": 0.045,
+    "ambient_recovery_per_second": 0.006
+  },
+
+  "heater": {
+    "radius_tiles": 6,
+    "wood_per_degree_per_day": 2.16
+  },
+
+  "work": {
+    "move_speed_tiles_per_second": 3,
+    "gather_seconds": 3,
+    "eat_seconds": 2,
+    "carry_capacity": 5,
+    "food_target_per_colonist": 3
+  },
+
+  "ai": {
+    "search_max_nodes": 6000,
+    "search_nodes_per_tick": 40000,
+    "idle_cooldown_seconds": 2,
+    "failed_path_cooldown_seconds": 3,
+    "exhausted_search_memo_seconds": 20
+  },
+
+  "start": {
+    "wood": 40,
+    "food": 60
+  },
+
+  // move_cost 0 = impassable. amount = units a fresh tile holds. depletes_to = tile once empty.
+  "tiles": {
+    "grass": { "move_cost": 10 },
+    "water": { "move_cost": 0 },
+    "rock":  { "move_cost": 0 },
+    "tree":  { "move_cost": 20, "amount": 30, "depletes_to": "grass" },
+    "bush":  { "move_cost": 14, "amount": 20, "depletes_to": "grass" },
+    "snow":  { "move_cost": 14 }
+  }
+}

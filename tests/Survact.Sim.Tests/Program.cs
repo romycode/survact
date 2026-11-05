@@ -1,12 +1,19 @@
 using System.Diagnostics;
 using Survact.Sim;
+using Survact.Sim.Commands;
+using Survact.Sim.Data;
 using Survact.Sim.Persistence;
 
 // Usage: dotnet run -c Release --project tests/Survact.Sim.Tests [-- filter]
+// Tests run against the real game data (game/data/balance.json), the same file the game ships.
 var filter = args.Length > 0 ? args[0] : null;
 var tests = new (string Name, Action Body)[]
 {
+    ("data: shipped balance.json loads", DataLoads),
+    ("data: typos and bad values are rejected", DataRejectsBadInput),
     ("determinism: same seed, same world", Determinism),
+    ("commands: replay of seed + log reproduces the session", ReplayReproducesSession),
+    ("commands: invalid commands are rejected, not applied", InvalidCommandsRejected),
     ("save/load: roundtrip continues identically", SaveLoadRoundtrip),
     ("invariants: 10 game days, no NaN, no leaks", LongRunInvariants),
     ("perf: 2000 colonists on 512x512 stays under budget", PerfBudget),
@@ -30,11 +37,81 @@ foreach (var (name, body) in tests)
 }
 return failed == 0 ? 0 : 1;
 
+static void DataLoads()
+{
+    var b = TestData.Game.Balance;
+    Assert(b.TicksPerDay == 240 * Simulation.TicksPerSecond, $"ticks per day {b.TicksPerDay}");
+    Assert(b.GatherTicks == 90, $"gather ticks {b.GatherTicks}");
+    Assert(TestData.Game.Tiles.MoveCost(Survact.Sim.World.Tile.Water) == 0, "water must be impassable");
+}
+
+static void DataRejectsBadInput()
+{
+    string json = TestData.Json;
+    ExpectReject(json.Replace("\"eat_below\"", "\"eat_bellow\""), "unknown field");
+    ExpectReject(json.Replace("\"carry_capacity\": 5,", ""), "missing required field");
+    ExpectReject(json.Replace("\"carry_capacity\": 5", "\"carry_capacity\": 0"), "carry_capacity");
+    ExpectReject(json.Replace("\"snow\":  { \"move_cost\": 14 }", "\"slush\": { \"move_cost\": 14 }"), "unknown tile");
+
+    static void ExpectReject(string json, string what)
+    {
+        try
+        {
+            GameData.FromJson(json);
+        }
+        catch (GameDataException)
+        {
+            return;
+        }
+        throw new Exception($"data with {what} was accepted");
+    }
+}
+
+static void ReplayReproducesSession()
+{
+    var settings = new SimSettings(Seed: 2024, InitialColonists: 40);
+    var live = Simulation.Create(settings, TestData.Game);
+    var c = live.Colony;
+    for (int t = 0; t < 2400; t++)
+    {
+        if (t == 100) live.Enqueue(Command.SpawnColonists(c.StockX, c.StockY, 25));
+        if (t == 700) live.Enqueue(Command.AddStock(wood: -30, food: 200));
+        if (t == 1200) live.Enqueue(Command.SetClimateOffset(-15f));
+        live.Step();
+    }
+    Assert(live.CommandLog.Count == 3, $"expected 3 logged commands, got {live.CommandLog.Count}");
+
+    var replayed = Simulation.Create(settings, TestData.Game);
+    Replay.Run(replayed, live.CommandLog, live.Tick);
+    Assert(replayed.StateHash() == live.StateHash(), "replay diverged from the live session");
+
+    var noCommands = Simulation.Create(settings, TestData.Game);
+    noCommands.Step(2400);
+    Assert(noCommands.StateHash() != live.StateHash(), "commands had no effect on state");
+}
+
+static void InvalidCommandsRejected()
+{
+    var sim = Simulation.Create(new SimSettings(Seed: 5, InitialColonists: 10), TestData.Game);
+    var rejected = new List<string>();
+    sim.CommandRejected += (_, reason) => rejected.Add(reason);
+
+    int before = sim.Colonists.Count;
+    sim.Enqueue(Command.SpawnColonists(-5, 3, 10));                                   // out of bounds
+    sim.Enqueue(Command.SpawnColonists(sim.Colony.StockX, sim.Colony.StockY, 0));    // bad count
+    sim.Enqueue(Command.SetClimateOffset(500f));                                      // out of range
+    sim.Step();
+
+    Assert(rejected.Count == 3, $"expected 3 rejections, got {rejected.Count}: {string.Join("; ", rejected)}");
+    Assert(sim.Colonists.Count == before, "rejected spawn still spawned colonists");
+    Assert(sim.CommandLog.Count == 0, "rejected commands must not enter the replay log");
+}
+
 static void Determinism()
 {
     var settings = new SimSettings(Seed: 42, InitialColonists: 80);
-    var a = Simulation.Create(settings);
-    var b = Simulation.Create(settings);
+    var a = Simulation.Create(settings, TestData.Game);
+    var b = Simulation.Create(settings, TestData.Game);
     for (int t = 0; t < 3000; t++)
     {
         a.Step();
@@ -43,20 +120,21 @@ static void Determinism()
     }
     Assert(a.StateHash() == b.StateHash(), "diverged at end");
 
-    var other = Simulation.Create(settings with { Seed = 43 });
+    var other = Simulation.Create(settings with { Seed = 43 }, TestData.Game);
     other.Step(3000);
     Assert(other.StateHash() != a.StateHash(), "different seeds produced identical worlds");
 }
 
 static void SaveLoadRoundtrip()
 {
-    var sim = Simulation.Create(new SimSettings(Seed: 7, InitialColonists: 60));
+    var sim = Simulation.Create(new SimSettings(Seed: 7, InitialColonists: 60), TestData.Game);
     sim.Step(1500);
+    sim.Enqueue(Command.AddStock(10, 10)); // pending at save time: must survive the roundtrip
 
     using var ms = new MemoryStream();
     SaveGame.Save(sim, ms);
     ms.Position = 0;
-    var loaded = SaveGame.Load(ms);
+    var loaded = SaveGame.Load(ms, TestData.Game);
 
     Assert(loaded.StateHash() == sim.StateHash(), "hash differs right after load");
     sim.Step(1500);
@@ -66,11 +144,11 @@ static void SaveLoadRoundtrip()
 
 static void LongRunInvariants()
 {
-    var sim = Simulation.Create(new SimSettings(Seed: 1234, InitialColonists: 200));
+    var sim = Simulation.Create(new SimSettings(Seed: 1234, InitialColonists: 200), TestData.Game);
     int days = 10;
     for (int d = 0; d < days; d++)
     {
-        sim.Step(Simulation.TicksPerDay);
+        sim.Step(sim.Balance.TicksPerDay);
         var c = sim.Colonists;
         for (int i = 0; i < c.Count; i++)
         {
@@ -97,7 +175,7 @@ static void PerfBudget()
     const int ticks = 3000;
     const double p99BudgetMs = 8.0; // a 30 Hz tick has 33 ms; leave most of it to rendering and x10 speed
 
-    var sim = Simulation.Create(new SimSettings(Seed: 99, Width: 512, Height: 512, InitialColonists: colonists));
+    var sim = Simulation.Create(new SimSettings(Seed: 99, Width: 512, Height: 512, InitialColonists: colonists), TestData.Game);
     sim.Step(300); // warm up JIT / tiered compilation
     var profiler = new SystemProfiler();
     sim.Profiler = profiler;
@@ -127,4 +205,24 @@ static void PerfBudget()
 static void Assert(bool condition, string message)
 {
     if (!condition) throw new Exception(message);
+}
+
+static class TestData
+{
+    private static readonly Lazy<string> JsonText = new(() => File.ReadAllText(FindDataFile("balance.json")));
+    private static readonly Lazy<GameData> Data = new(() => GameData.FromJson(JsonText.Value));
+
+    public static string Json => JsonText.Value;
+    public static GameData Game => Data.Value;
+
+    /// <summary>Walks up from the test binary to the repo root, then into game/data.</summary>
+    private static string FindDataFile(string name)
+    {
+        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir is not null; dir = dir.Parent)
+        {
+            string candidate = Path.Combine(dir.FullName, "game", "data", name);
+            if (File.Exists(candidate)) return candidate;
+        }
+        throw new FileNotFoundException($"game/data/{name} not found above {AppContext.BaseDirectory}");
+    }
 }

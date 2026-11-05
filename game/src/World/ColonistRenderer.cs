@@ -1,7 +1,8 @@
 using Survact.Sim;
 using Godot;
+using Survact.Game.Core;
 
-namespace Survact.Game;
+namespace Survact.Game.World;
 
 /// <summary>
 /// All colonists in ONE draw call via MultiMesh. Never one Node per entity: 5,000 Nodes would
@@ -20,7 +21,7 @@ public partial class ColonistRenderer : MultiMeshInstance2D
         {
             TransformFormat = MultiMesh.TransformFormatEnum.Transform2D,
             UseColors = true,
-            Mesh = new QuadMesh { Size = new Vector2(Main.TilePx * 0.75f, Main.TilePx * 0.75f) },
+            Mesh = new QuadMesh { Size = new Vector2(RenderConfig.TilePx * 0.75f, RenderConfig.TilePx * 0.75f) },
         };
         Multimesh = _mesh;
     }
@@ -40,7 +41,7 @@ public partial class ColonistRenderer : MultiMeshInstance2D
         {
             float x = c.PrevX[i] + (c.X[i] - c.PrevX[i]) * alpha;
             float y = c.PrevY[i] + (c.Y[i] - c.PrevY[i]) * alpha;
-            _mesh.SetInstanceTransform2D(i, new Transform2D(0f, new Vector2(x, y) * Main.TilePx));
+            _mesh.SetInstanceTransform2D(i, new Transform2D(0f, new Vector2(x, y) * RenderConfig.TilePx));
             _mesh.SetInstanceColor(i, Palette.ColonistColor(c.State[i], c.Job[i], c.Carry[i], c.Warmth[i], c.Hunger[i]));
         }
     }

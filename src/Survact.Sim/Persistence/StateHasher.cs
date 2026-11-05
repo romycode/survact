@@ -17,6 +17,7 @@ internal static class StateHasher
         ulong h = Offset;
         Mix(ref h, sim.Tick);
         Mix(ref h, BitConverter.SingleToInt32Bits(sim.Temperature));
+        Mix(ref h, BitConverter.SingleToInt32Bits(sim.ClimateOffset));
         Mix(ref h, sim.ThinkCursor);
         Mix(ref h, (long)sim.Rng.State);
 
@@ -47,6 +48,12 @@ internal static class StateHasher
         MixBytes(ref h, MemoryMarshal.AsBytes(c.PathPos.AsSpan(0, n)));
         for (int i = 0; i < n; i++)
             MixBytes(ref h, MemoryMarshal.AsBytes(c.Path.AsSpan(i * Colonists.MaxPathLength, c.PathLength[i])));
+
+        Mix(ref h, sim.PendingCommands.Count);
+        foreach (var cmd in sim.PendingCommands)
+        {
+            Mix(ref h, (long)cmd.Kind); Mix(ref h, cmd.A); Mix(ref h, cmd.B); Mix(ref h, cmd.C);
+        }
 
         return h;
     }

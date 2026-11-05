@@ -96,9 +96,9 @@ public sealed class FlowField
 
             void Relax(int n)
             {
-                int cost = TileRules.MoveCost(_map.Get(n));
+                int cost = _map.Rules.MoveCost(_map.Get(n));
                 if (cost == 0) return;
-                int nd = d + TileRules.MoveCost(_map.Get(cur));
+                int nd = d + _map.Rules.MoveCost(_map.Get(cur));
                 if (nd >= _dist[n]) return;
                 _dist[n] = nd;
                 open.Enqueue(n, nd);

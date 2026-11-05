@@ -8,20 +8,21 @@ internal static class NeedsSystem
         var c = sim.Colonists;
         var colony = sim.Colony;
         int n = c.Count;
-        float coldDeficit = MathF.Max(0, SimBalance.ComfortTemperature - sim.Temperature);
-        float coldLoss = coldDeficit * SimBalance.ColdLossPerDegreeTick;
+        float coldDeficit = MathF.Max(0, sim.Balance.ComfortTemperature - sim.Temperature);
+        float coldLoss = coldDeficit * sim.Balance.ColdLossPerDegreeTick;
         bool heaterLit = colony.HeaterLit;
+        int heatRadius = sim.Balance.HeatRadius;
 
         float[] hunger = c.Hunger, warmth = c.Warmth, x = c.X, y = c.Y;
 
         for (int i = 0; i < n; i++)
         {
-            hunger[i] = MathF.Max(0, hunger[i] - SimBalance.HungerPerTick);
+            hunger[i] = MathF.Max(0, hunger[i] - sim.Balance.HungerPerTick);
 
             float w = warmth[i];
-            if (heaterLit && colony.InHeatRange(x[i], y[i])) w += SimBalance.HeaterWarmthPerTick;
+            if (heaterLit && colony.InHeatRange(x[i], y[i], heatRadius)) w += sim.Balance.HeaterWarmthPerTick;
             else if (coldLoss > 0) w -= coldLoss;
-            else w += SimBalance.AmbientRecoveryPerTick;
+            else w += sim.Balance.AmbientRecoveryPerTick;
             warmth[i] = Math.Clamp(w, 0f, 1f);
         }
     }

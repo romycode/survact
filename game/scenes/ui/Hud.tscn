@@ -1,0 +1,53 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/UI/Hud.cs" id="1_hud"]
+
+[node name="Hud" type="CanvasLayer"]
+script = ExtResource("1_hud")
+
+[node name="Root" type="Control" parent="."]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="StatsPanel" type="PanelContainer" parent="Root"]
+layout_mode = 0
+offset_left = 12.0
+offset_top = 12.0
+offset_right = 52.0
+offset_bottom = 52.0
+mouse_filter = 2
+
+[node name="Stats" type="Label" parent="Root/StatsPanel"]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="Notification" type="Label" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -52.0
+offset_right = 612.0
+offset_bottom = -32.0
+grow_vertical = 0
+theme_type_variation = &"AccentLabel"
+
+[node name="Help" type="Label" parent="Root"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 12.0
+offset_top = -28.0
+offset_right = 1212.0
+offset_bottom = -8.0
+grow_vertical = 0
+theme_type_variation = &"DimLabel"

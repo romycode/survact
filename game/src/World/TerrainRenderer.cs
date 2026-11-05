@@ -1,8 +1,9 @@
 using Survact.Sim;
 using Survact.Sim.World;
 using Godot;
+using Survact.Game.Core;
 
-namespace Survact.Game;
+namespace Survact.Game.World;
 
 /// <summary>
 /// One 32x32 texture per chunk (1 pixel = 1 tile, scaled up with nearest filtering).
@@ -44,8 +45,8 @@ public partial class TerrainRenderer : Node2D
                 Texture = _textures[k],
                 Centered = false,
                 TextureFilter = TextureFilterEnum.Nearest,
-                Scale = new Vector2(Main.TilePx, Main.TilePx),
-                Position = new Vector2(k % map.ChunksX * Size, k / map.ChunksX * Size) * Main.TilePx,
+                Scale = new Vector2(RenderConfig.TilePx, RenderConfig.TilePx),
+                Position = new Vector2(k % map.ChunksX * Size, k / map.ChunksX * Size) * RenderConfig.TilePx,
             });
         }
     }

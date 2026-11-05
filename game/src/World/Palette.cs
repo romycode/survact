@@ -2,7 +2,7 @@ using Survact.Sim.Entities;
 using Survact.Sim.World;
 using Godot;
 
-namespace Survact.Game;
+namespace Survact.Game.World;
 
 /// <summary>Limited, cold palette. Every colour on screen comes from here so the look stays coherent.</summary>
 public static class Palette

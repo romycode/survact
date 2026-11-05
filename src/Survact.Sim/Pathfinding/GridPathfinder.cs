@@ -44,7 +44,7 @@ public sealed class GridPathfinder
     /// <summary>A* from start to goal. Path excludes start, includes goal. Returns length or -1.</summary>
     public int FindPath(int start, int goal, int maxExpanded, Span<int> output)
     {
-        if (!TileRules.Walkable(_map.Get(goal))) return -1;
+        if (!_map.Rules.Walkable(_map.Get(goal))) return -1;
         var target = new TileGoal(goal, _map.Width);
         return Search(start, ref target, maxExpanded, output, out _);
     }
@@ -106,7 +106,7 @@ public sealed class GridPathfinder
             {
                 int next = neighbours[k];
                 if (_closedStamp[next] == gen) continue;
-                int cost = TileRules.MoveCost(_map.Get(next));
+                int cost = _map.Rules.MoveCost(_map.Get(next));
                 if (cost == 0) continue;
 
                 int tentative = _g[current] + cost;

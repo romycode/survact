@@ -21,7 +21,7 @@ internal static class ThinkSystem
         for (int i = 0; i < n; i++)
             if (c.State[i] == ColonistState.Idle && c.Timer[i] > 0) c.Timer[i]--;
 
-        long budgetEnd = sim.Pathfinder.Expanded + SimBalance.SearchNodesPerTick;
+        long budgetEnd = sim.Pathfinder.Expanded + sim.Balance.SearchNodesPerTick;
         int start = sim.ThinkCursor % n;
         int visited = 0;
 
@@ -40,33 +40,33 @@ internal static class ThinkSystem
         var c = sim.Colonists;
         var colony = sim.Colony;
 
-        if (c.Hunger[i] < SimBalance.EatThreshold && colony.Food > 0)
+        if (c.Hunger[i] < sim.Balance.EatThreshold && colony.Food > 0)
         {
             GoToStockpile(sim, i, Job.Eat, within: 1);
             return;
         }
 
-        if (c.Warmth[i] < SimBalance.WarmThreshold && colony.HeaterLit)
+        if (c.Warmth[i] < sim.Balance.WarmThreshold && colony.HeaterLit)
         {
-            if (colony.InHeatRange(c.X[i], c.Y[i]))
+            if (colony.InHeatRange(c.X[i], c.Y[i], sim.Balance.HeatRadius))
             {
                 c.Job[i] = Job.Warm;
                 c.State[i] = ColonistState.Warming;
             }
             else
             {
-                GoToStockpile(sim, i, Job.Warm, within: ColonyState.HeatRadius / 2);
+                GoToStockpile(sim, i, Job.Warm, within: sim.Balance.HeatRadius / 2);
             }
             return;
         }
 
-        bool wantFood = colony.Food < c.Count * SimBalance.FoodTargetPerColonist
+        bool wantFood = colony.Food < c.Count * sim.Balance.FoodTargetPerColonist
                         || (colony.Wood > colony.Food * 2 && sim.Rng.Next(2) == 0);
 
         if (TryGather(sim, i, wantFood ? Job.Food : Job.Wood)) return;
         if (TryGather(sim, i, wantFood ? Job.Wood : Job.Food)) return;
 
-        c.Timer[i] = SimBalance.IdleCooldownTicks;
+        c.Timer[i] = sim.Balance.IdleCooldownTicks;
     }
 
     private static bool TryGather(Simulation sim, int i, Job job)
@@ -81,10 +81,10 @@ internal static class ThinkSystem
         if (sim.Tick < sim.SearchExhaustedUntil[memo]) return false;
 
         var goal = new ResourceGoal(map, job == Job.Food ? Tile.Bush : Tile.Tree);
-        int length = sim.Pathfinder.FindNearest(start, ref goal, SimBalance.SearchMaxNodes, c.PathSlice(i), out int target);
+        int length = sim.Pathfinder.FindNearest(start, ref goal, sim.Balance.SearchMaxNodes, c.PathSlice(i), out int target);
         if (length < 0)
         {
-            sim.SearchExhaustedUntil[memo] = sim.Tick + SimBalance.ExhaustedSearchMemoTicks;
+            sim.SearchExhaustedUntil[memo] = sim.Tick + sim.Balance.ExhaustedSearchMemoTicks;
             return false;
         }
 
@@ -113,7 +113,7 @@ internal static class ThinkSystem
         {
             c.Job[i] = Job.None;
             c.State[i] = ColonistState.Idle;
-            c.Timer[i] = SimBalance.FailedPathCooldownTicks;
+            c.Timer[i] = sim.Balance.FailedPathCooldownTicks;
             return;
         }
 

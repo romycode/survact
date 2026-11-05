@@ -24,7 +24,7 @@ internal static class MovementSystem
         var c = sim.Colonists;
         int width = sim.Map.Width;
         int pathBase = i * Colonists.MaxPathLength;
-        float budget = SimBalance.MoveSpeedTilesPerTick;
+        float budget = sim.Balance.MoveSpeedTilesPerTick;
 
         while (budget > 0 && c.PathPos[i] < c.PathLength[i])
         {
@@ -45,7 +45,7 @@ internal static class MovementSystem
         var map = sim.Map;
         var colony = sim.Colony;
         int slot = i * Colonists.MaxPathLength;
-        float budget = SimBalance.MoveSpeedTilesPerTick;
+        float budget = sim.Balance.MoveSpeedTilesPerTick;
 
         while (budget > 0)
         {
@@ -96,7 +96,7 @@ internal static class MovementSystem
         {
             case Job.Eat:
                 c.State[i] = ColonistState.Eating;
-                c.Timer[i] = SimBalance.EatTicks;
+                c.Timer[i] = sim.Balance.EatTicks;
                 break;
 
             case Job.Warm:
@@ -105,7 +105,7 @@ internal static class MovementSystem
 
             case Job.Wood or Job.Food when c.Carry[i] == 0:
                 c.State[i] = ColonistState.Gathering;
-                c.Timer[i] = SimBalance.GatherTicks;
+                c.Timer[i] = sim.Balance.GatherTicks;
                 break;
 
             case Job.Wood or Job.Food:

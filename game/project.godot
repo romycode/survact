@@ -6,8 +6,8 @@ config_version=5
 [application]
 
 config/name="Survact"
-run/main_scene="res://Main.tscn"
-config/features=PackedStringArray("4.7", "C#", "Forward Plus")
+run/main_scene="res://scenes/Main.tscn"
+config/features=PackedStringArray("4.7", "C#", "Mobile")
 
 [display]
 
@@ -19,7 +19,18 @@ window/stretch/mode="disabled"
 
 project/assembly_name="Survact.Game"
 
+[gui]
+
+theme/custom="res://ui/theme.tres"
+
+[internationalization]
+
+locale/translations=PackedStringArray("res://i18n/strings.es.translation", "res://i18n/strings.en.translation")
+locale/fallback="es"
+
 [rendering]
 
+; Mobile renderer: lightweight, Vulkan on Windows/Linux and Metal on Apple Silicon.
+renderer/rendering_method="mobile"
 textures/canvas_textures/default_texture_filter=0
 2d/snap/snap_2d_transforms_to_pixel=true

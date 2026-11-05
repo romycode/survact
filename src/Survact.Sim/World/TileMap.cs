@@ -24,8 +24,11 @@ public sealed class TileMap
     /// <summary>Incremented when any tile changes between walkable and blocked. Invalidates regions / path caches.</summary>
     public int WalkabilityVersion { get; private set; }
 
-    public TileMap(int width, int height)
+    public TileTable Rules { get; }
+
+    public TileMap(int width, int height, TileTable rules)
     {
+        Rules = rules;
         if (width % ChunkSize != 0 || height % ChunkSize != 0)
             throw new ArgumentException($"Map size must be a multiple of {ChunkSize}.");
 
@@ -54,7 +57,7 @@ public sealed class TileMap
 
     public void Set(int index, Tile tile, ushort amount)
     {
-        if (TileRules.Walkable(Tiles[index]) != TileRules.Walkable(tile)) WalkabilityVersion++;
+        if (Rules.Walkable(Tiles[index]) != Rules.Walkable(tile)) WalkabilityVersion++;
         Tiles[index] = tile;
         Amount[index] = amount;
         TouchChunk(index);
@@ -70,7 +73,7 @@ public sealed class TileMap
         Amount[index] -= (ushort)taken;
         if (Amount[index] == 0)
         {
-            Set(index, TileRules.Depleted(Tiles[index]), 0);
+            Set(index, Rules.Depleted(Tiles[index]), 0);
         }
         return taken;
     }

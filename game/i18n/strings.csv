@@ -1,0 +1,25 @@
+keys,es,en
+HUD_DAY,DÍA,DAY
+HUD_WOOD,MADERA,WOOD
+HUD_FOOD,COMIDA,FOOD
+HUD_ALIVE,VIVOS,ALIVE
+HUD_DEAD,MUERTOS,DEAD
+HUD_HEATER,CALEFACTOR,HEATER
+HUD_ON,ENCENDIDO,ON
+HUD_OFF,APAGADO,OFF
+HUD_SPEED,VELOCIDAD,SPEED
+HUD_PAUSED,PAUSA,PAUSED
+HUD_SIM,SIM,SIM
+HELP_CAMERA,mover cámara,move camera
+HELP_PAUSE,pausa,pause
+HELP_SPEED,velocidad (1/2/3),speed (1/2/3)
+HELP_SAVE,guardar,save
+HELP_LOAD,cargar,load
+HELP_NEW_WORLD,mundo nuevo,new world
+HELP_CONSOLE,consola,console
+HELP_DEBUG,debug,debug
+MSG_SAVED,Partida guardada,Game saved
+MSG_LOADED,Partida cargada,Game loaded
+MSG_NO_SAVE,No hay partida guardada,No saved game yet
+MSG_SAVE_INCOMPATIBLE,La partida guardada no es compatible con esta versión,The saved game is not compatible with this version
+MSG_NEW_WORLD,Mundo nuevo,New world

@@ -30,7 +30,7 @@ internal static class WorkSystem
                     break;
 
                 case ColonistState.Warming:
-                    if (!colony.HeaterLit || c.Warmth[i] >= SimBalance.WarmEnough) ToIdle(c, i);
+                    if (!colony.HeaterLit || c.Warmth[i] >= sim.Balance.WarmEnough) ToIdle(c, i);
                     break;
             }
         }
@@ -40,7 +40,7 @@ internal static class WorkSystem
     {
         var c = sim.Colonists;
         int target = c.Target[i];
-        int taken = sim.Map.Take(target, SimBalance.CarryCapacity);
+        int taken = sim.Map.Take(target, sim.Balance.CarryCapacity);
         sim.Map.Release(target);
         c.Target[i] = -1;
         c.Carry[i] = taken;

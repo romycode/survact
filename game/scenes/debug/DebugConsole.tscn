@@ -1,0 +1,32 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://src/Debug/DebugConsole.cs" id="1_console"]
+
+[node name="DebugConsole" type="CanvasLayer"]
+layer = 100
+script = ExtResource("1_console")
+
+[node name="Panel" type="PanelContainer" parent="."]
+unique_name_in_owner = true
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 280.0
+grow_horizontal = 2
+
+[node name="VBox" type="VBoxContainer" parent="Panel"]
+layout_mode = 2
+
+[node name="Log" type="RichTextLabel" parent="Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+focus_mode = 0
+bbcode_enabled = true
+scroll_following = true
+selection_enabled = true
+
+[node name="Input" type="LineEdit" parent="Panel/VBox"]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "help"
+keep_editing_on_text_submit = true

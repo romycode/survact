@@ -20,7 +20,7 @@ public static class WorldGen
             else if (moisture > 0.42f && jitter < 0.035f) tile = Tile.Bush;
             else tile = Tile.Grass;
 
-            map.Set(map.Index(x, y), tile, TileRules.InitialAmount(tile));
+            map.Set(map.Index(x, y), tile, map.Rules.InitialAmount(tile));
         }
     }
 

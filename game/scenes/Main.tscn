@@ -1,0 +1,48 @@
+[gd_scene load_steps=9 format=3]
+
+[ext_resource type="Script" path="res://src/Core/GameController.cs" id="1_game"]
+[ext_resource type="Script" path="res://src/World/TerrainRenderer.cs" id="2_terrain"]
+[ext_resource type="Script" path="res://src/World/Overlay.cs" id="3_overlay"]
+[ext_resource type="Script" path="res://src/World/ColonistRenderer.cs" id="4_colonists"]
+[ext_resource type="Script" path="res://src/World/CameraRig.cs" id="5_camera"]
+[ext_resource type="PackedScene" path="res://scenes/ui/Hud.tscn" id="6_hud"]
+[ext_resource type="PackedScene" path="res://scenes/debug/DebugOverlay.tscn" id="7_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/debug/DebugConsole.tscn" id="8_console"]
+
+[node name="Main" type="Node"]
+script = ExtResource("1_game")
+
+[node name="World" type="Node2D" parent="."]
+unique_name_in_owner = true
+
+[node name="Terrain" type="Node2D" parent="World"]
+unique_name_in_owner = true
+script = ExtResource("2_terrain")
+
+[node name="Overlay" type="Node2D" parent="World"]
+unique_name_in_owner = true
+z_index = 1
+script = ExtResource("3_overlay")
+
+[node name="Colonists" type="MultiMeshInstance2D" parent="World"]
+unique_name_in_owner = true
+z_index = 2
+script = ExtResource("4_colonists")
+
+[node name="Daylight" type="CanvasModulate" parent="World"]
+unique_name_in_owner = true
+
+[node name="Camera" type="Camera2D" parent="World"]
+unique_name_in_owner = true
+script = ExtResource("5_camera")
+
+[node name="Hud" parent="." instance=ExtResource("6_hud")]
+unique_name_in_owner = true
+
+[node name="DebugOverlay" parent="." instance=ExtResource("7_overlay")]
+unique_name_in_owner = true
+
+[node name="DebugConsole" parent="." instance=ExtResource("8_console")]
+unique_name_in_owner = true
+
+[connection signal="CommandSubmitted" from="DebugConsole" to="." method="OnConsoleCommandSubmitted"]
