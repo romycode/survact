@@ -16,6 +16,8 @@ public static class Actions
     public static readonly StringName CameraZoomIn = "camera_zoom_in";
     public static readonly StringName CameraZoomOut = "camera_zoom_out";
     public static readonly StringName CameraDrag = "camera_drag";
+    public static readonly StringName CameraRotateLeft = "camera_rotate_left";
+    public static readonly StringName CameraRotateRight = "camera_rotate_right";
 
     public static readonly StringName Pause = "game_pause";
     public static readonly StringName Speed1 = "game_speed_1";

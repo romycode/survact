@@ -73,6 +73,7 @@ public partial class Hud : CanvasLayer
         (StringName Action, string Label)[] entries =
         [
             (Actions.CameraUp, Tr("move camera")),
+            (Actions.CameraRotateLeft, Tr("rotate")),
             (Actions.Pause, Tr("pause")),
             (Actions.Speed1, Tr("speed (1/2/3)")),
             (Actions.QuickSave, Tr("save")),

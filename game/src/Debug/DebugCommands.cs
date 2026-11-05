@@ -31,6 +31,8 @@ public static class DebugCommands
         ["new"] = new("new [seed]", "start a new world", NewWorld),
         ["save"] = new("save", "quick save", (_, h) => { h.QuickSave(); return "saved"; }),
         ["load"] = new("load", "quick load", (_, h) => h.QuickLoad() ? "loaded" : Error("load failed")),
+        ["pixel"] = new("pixel <1-6>", "3D render scale (1 = native, 3 = default retro)", (a, h) => { h.PixelScale = Math.Clamp(Int(a[0]), 1, 6); return $"pixel scale {h.PixelScale}"; }),
+        ["retro"] = new("retro [on|off]", "toggle the posterize/dither filter", Retro),
         ["overlay"] = new("overlay", "toggle the debug overlay (also F3)", (_, h) => { h.ToggleDebugOverlay(); return "ok"; }),
         ["clear"] = new("clear", "clear the console", (_, h) => { h.ClearConsole(); return ""; }),
     };
@@ -119,6 +121,12 @@ public static class DebugCommands
     {
         h.NewWorld(a.Length > 0 ? uint.Parse(a[0], CultureInfo.InvariantCulture) : null);
         return $"seed {h.Sim.Settings.Seed}";
+    }
+
+    private static string Retro(string[] a, IDebugHost h)
+    {
+        h.RetroFilter = a.Length == 0 ? !h.RetroFilter : a[0].Equals("on", StringComparison.OrdinalIgnoreCase);
+        return $"retro filter {(h.RetroFilter ? "on" : "off")}";
     }
 
     private static int Int(string s) => int.Parse(s, CultureInfo.InvariantCulture);

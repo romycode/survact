@@ -35,22 +35,26 @@ anchors_preset = 2
 anchor_top = 1.0
 anchor_bottom = 1.0
 offset_left = 12.0
-offset_top = -52.0
+offset_top = -60.0
 offset_right = 612.0
-offset_bottom = -32.0
+offset_bottom = -38.0
 grow_vertical = 0
 theme_type_variation = &"AccentLabel"
 
-[node name="Help" type="Label" parent="Root"]
+[node name="HelpBar" type="PanelContainer" parent="Root"]
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -30.0
+grow_horizontal = 2
+grow_vertical = 0
+mouse_filter = 2
+theme_type_variation = &"BarPanel"
+
+[node name="Help" type="Label" parent="Root/HelpBar"]
 unique_name_in_owner = true
 auto_translate_mode = 2
-layout_mode = 1
-anchors_preset = 2
-anchor_top = 1.0
-anchor_bottom = 1.0
-offset_left = 12.0
-offset_top = -28.0
-offset_right = 1212.0
-offset_bottom = -8.0
-grow_vertical = 0
+layout_mode = 2
 theme_type_variation = &"DimLabel"

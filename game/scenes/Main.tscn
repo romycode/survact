@@ -1,48 +1,108 @@
-[gd_scene load_steps=9 format=3]
+[gd_scene load_steps=14 format=3]
 
 [ext_resource type="Script" path="res://src/Core/GameController.cs" id="1_game"]
-[ext_resource type="Script" path="res://src/World/TerrainRenderer.cs" id="2_terrain"]
-[ext_resource type="Script" path="res://src/World/Overlay.cs" id="3_overlay"]
-[ext_resource type="Script" path="res://src/World/ColonistRenderer.cs" id="4_colonists"]
-[ext_resource type="Script" path="res://src/World/CameraRig.cs" id="5_camera"]
-[ext_resource type="PackedScene" path="res://scenes/ui/Hud.tscn" id="6_hud"]
-[ext_resource type="PackedScene" path="res://scenes/debug/DebugOverlay.tscn" id="7_overlay"]
-[ext_resource type="PackedScene" path="res://scenes/debug/DebugConsole.tscn" id="8_console"]
+[ext_resource type="Shader" path="res://shaders/retro.gdshader" id="2_retro"]
+[ext_resource type="Script" path="res://src/World/LightingRig.cs" id="3_lighting"]
+[ext_resource type="Script" path="res://src/World/TerrainView.cs" id="4_terrain"]
+[ext_resource type="Script" path="res://src/World/VegetationView.cs" id="5_vegetation"]
+[ext_resource type="Script" path="res://src/World/ColonistView.cs" id="6_colonists"]
+[ext_resource type="PackedScene" path="res://scenes/world/Heater.tscn" id="7_heater"]
+[ext_resource type="Script" path="res://src/World/CameraRig.cs" id="8_camera"]
+[ext_resource type="PackedScene" path="res://scenes/ui/Hud.tscn" id="9_hud"]
+[ext_resource type="PackedScene" path="res://scenes/debug/DebugOverlay.tscn" id="10_overlay"]
+[ext_resource type="PackedScene" path="res://scenes/debug/DebugConsole.tscn" id="11_console"]
+
+[sub_resource type="ShaderMaterial" id="Mat_retro"]
+shader = ExtResource("2_retro")
+shader_parameter/enabled = true
+shader_parameter/levels = 14.0
+shader_parameter/dither_strength = 0.55
+
+[sub_resource type="Environment" id="Env_world"]
+background_mode = 1
+background_color = Color(0.66, 0.74, 0.83, 1)
+ambient_light_source = 2
+ambient_light_color = Color(0.62, 0.68, 0.78, 1)
+ambient_light_energy = 0.54
+tonemap_mode = 3
+fog_enabled = true
+fog_light_color = Color(0.66, 0.74, 0.83, 1)
+fog_density = 0.004
 
 [node name="Main" type="Node"]
 script = ExtResource("1_game")
 
-[node name="World" type="Node2D" parent="."]
+[node name="RetroView" type="SubViewportContainer" parent="."]
+unique_name_in_owner = true
+texture_filter = 1
+material = SubResource("Mat_retro")
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+stretch = true
+stretch_shrink = 3
+
+[node name="Viewport3D" type="SubViewport" parent="RetroView"]
+handle_input_locally = false
+msaa_3d = 0
+size = Vector2i(426, 240)
+render_target_update_mode = 4
+
+[node name="World" type="Node3D" parent="RetroView/Viewport3D"]
 unique_name_in_owner = true
 
-[node name="Terrain" type="Node2D" parent="World"]
+[node name="Lighting" type="Node3D" parent="RetroView/Viewport3D/World"]
 unique_name_in_owner = true
-script = ExtResource("2_terrain")
+script = ExtResource("3_lighting")
 
-[node name="Overlay" type="Node2D" parent="World"]
+[node name="Environment" type="WorldEnvironment" parent="RetroView/Viewport3D/World/Lighting"]
+environment = SubResource("Env_world")
+
+[node name="Sun" type="DirectionalLight3D" parent="RetroView/Viewport3D/World/Lighting"]
+transform = Transform3D(1, 0, 0, 0, 0.62, 0.78, 0, -0.78, 0.62, 0, 20, 0)
+light_color = Color(1, 0.97, 0.92, 1)
+light_energy = 1.1
+shadow_enabled = true
+directional_shadow_max_distance = 90.0
+
+[node name="Moon" type="DirectionalLight3D" parent="RetroView/Viewport3D/World/Lighting"]
+transform = Transform3D(1, 0, 0, 0, 0.5, 0.87, 0, -0.87, 0.5, 0, 20, 0)
+light_color = Color(0.55, 0.65, 0.95, 1)
+light_energy = 0.22
+
+[node name="Terrain" type="Node3D" parent="RetroView/Viewport3D/World"]
 unique_name_in_owner = true
-z_index = 1
-script = ExtResource("3_overlay")
+script = ExtResource("4_terrain")
 
-[node name="Colonists" type="MultiMeshInstance2D" parent="World"]
+[node name="Vegetation" type="Node3D" parent="RetroView/Viewport3D/World"]
 unique_name_in_owner = true
-z_index = 2
-script = ExtResource("4_colonists")
+script = ExtResource("5_vegetation")
 
-[node name="Daylight" type="CanvasModulate" parent="World"]
+[node name="Colonists" type="MultiMeshInstance3D" parent="RetroView/Viewport3D/World"]
 unique_name_in_owner = true
+script = ExtResource("6_colonists")
 
-[node name="Camera" type="Camera2D" parent="World"]
-unique_name_in_owner = true
-script = ExtResource("5_camera")
-
-[node name="Hud" parent="." instance=ExtResource("6_hud")]
+[node name="Heater" parent="RetroView/Viewport3D/World" instance=ExtResource("7_heater")]
 unique_name_in_owner = true
 
-[node name="DebugOverlay" parent="." instance=ExtResource("7_overlay")]
+[node name="CameraRig" type="Node3D" parent="RetroView/Viewport3D/World"]
+unique_name_in_owner = true
+script = ExtResource("8_camera")
+
+[node name="Camera" type="Camera3D" parent="RetroView/Viewport3D/World/CameraRig"]
+fov = 35.0
+near = 0.5
+far = 400.0
+
+[node name="Hud" parent="." instance=ExtResource("9_hud")]
 unique_name_in_owner = true
 
-[node name="DebugConsole" parent="." instance=ExtResource("8_console")]
+[node name="DebugOverlay" parent="." instance=ExtResource("10_overlay")]
+unique_name_in_owner = true
+
+[node name="DebugConsole" parent="." instance=ExtResource("11_console")]
 unique_name_in_owner = true
 
 [connection signal="CommandSubmitted" from="DebugConsole" to="." method="OnConsoleCommandSubmitted"]

@@ -1,6 +1,7 @@
 # Survact
 
 Colony survival en frío extremo (Frostpunk + Rimworld + Factorio + ...). Godot 4.7 + C# / .NET 10.
+Vista 3D low-poly con filtro retro (render a baja resolución + posterizado con dithering).
 
 ## Requisitos
 
@@ -23,6 +24,7 @@ dotnet run -c Release --project tests/Survact.Sim.Tests -- replay   # filtrar po
 | Acción | Tecla |
 |---|---|
 | Mover cámara | WASD / flechas · botón central arrastra |
+| Rotar cámara | Q / E |
 | Zoom | rueda · `=` / `-` |
 | Pausa · velocidad x1/x3/x10 | Espacio · 1 / 2 / 3 |
 | Guardar · cargar | F5 · F9 |
@@ -47,16 +49,20 @@ src/Survact.Sim/            Simulación. C# puro: sin Godot, sin paquetes NuGet.
 tests/Survact.Sim.Tests/    Runner de consola contra los datos reales del juego. Código 1 si falla.
 game/                       Proyecto Godot. Solo presentación.
   data/balance.json         TODO el balance y las propiedades de terreno. Editable sin recompilar.
-  scenes/                   Main.tscn compone World + UI + Debug. ui/Hud.tscn, debug/*.tscn.
+  scenes/                   Main.tscn: RetroView (SubViewport 3D a 1/3 de resolución) + UI + Debug.
+                            world/Heater.tscn, ui/Hud.tscn, debug/*.tscn.
+  shaders/lowpoly.gdshader  Material único del mundo: nieve/hielo según el uniform global survact_frost.
+  shaders/retro.gdshader    Posterizado + dithering Bayer sobre la vista 3D.
   ui/theme.tres             Theme global (Project Settings → GUI → Theme).
   i18n/                     gettext: strings.pot (plantilla generada) + un .po por idioma (es).
   src/Core/                 GameController (dueño del sim, timestep), carga de datos.
+  src/World/                Vistas 3D: terreno por chunk, vegetación y colonos con MultiMesh,
+                            generador, luz día/noche (LightingRig), cámara orbital (CameraRig).
+  src/World/Geometry/       Generación de mallas low-poly en C# puro (sin Godot): verificable headless.
   src/Controls/             Acciones de input y bindings por defecto.
-  src/World/                Renderers: terreno por chunk, colonos con MultiMesh, overlay, cámara.
   src/UI/                   HUD.
   src/Debug/                Consola, comandos de desarrollo, overlay F3.
 tools/i18n.py               Extrae textos de C# y escenas → .pot, actualiza los .po, comprueba traducciones.
-tools/gen_buildings.py      Generador procedural de sprites (arte de prototipo).
 ideas.md                    Backlog de ideas de diseño.
 ```
 
@@ -69,7 +75,7 @@ ideas.md                    Backlog de ideas de diseño.
 5. **Godot: "call down, signal up".** Un nodo llama métodos de sus hijos; los hijos avisan con señales, conectadas en la escena. Nodos accedidos con nombres únicos (`%Nombre`), no rutas.
 6. **Layout y estilo en escenas y Theme**, no en código. Los scripts de UI solo rellenan datos.
 7. **Textos del jugador con `Tr("English text")` / `TrN("singular", "plural", n)`, siempre con literales**: la clave es el texto en inglés y el extractor solo ve literales (`Tr(variable)` no se puede traducir). Nota para traductores con `// TRANSLATORS: ...` en la línea anterior. Labels cuyo texto pone el código: `auto_translate_mode = 2` en la escena. La consola de desarrollo es en inglés y no se traduce.
-8. **Nunca un Node por entidad.** MultiMesh para entidades, textura por chunk para terreno.
+8. **Nunca un Node por entidad.** MultiMesh para colonos y vegetación, una malla por chunk para el terreno. Los cambios visuales globales (nieve) van por uniform global del shader, no regenerando mallas.
 9. **Datos en arrays, lógica en sistemas.** IA con presupuesto por tick, nunca proporcional a la población.
 10. **Todo estado nuevo entra en SaveGame y StateHasher** y sube `SaveGame.Version` si cambia el formato.
 
@@ -86,6 +92,7 @@ ideas.md                    Backlog de ideas de diseño.
 | `goto x y` | centra la cámara |
 | `hash` | hash del estado completo: compara máquinas o replays |
 | `log` | log de comandos de la sesión |
+| `pixel <1-6>` · `retro [on\|off]` | escala de render 3D (1 = nativa) · filtro posterizado |
 | `seed` · `new [seed]` · `save` · `load` · `overlay` · `clear` | |
 
 El **overlay F3** muestra el coste por sistema, estadísticas de pathfinding y todo lo que el sim sabe del tile bajo el ratón (tipo, cantidad, reserva, región, distancia al almacén).

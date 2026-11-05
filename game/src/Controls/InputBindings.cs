@@ -19,6 +19,8 @@ public static class InputBindings
         (Actions.CameraZoomIn, [Mouse(MouseButton.WheelUp), Key(global::Godot.Key.Equal)]),
         (Actions.CameraZoomOut, [Mouse(MouseButton.WheelDown), Key(global::Godot.Key.Minus)]),
         (Actions.CameraDrag, [Mouse(MouseButton.Middle)]),
+        (Actions.CameraRotateLeft, [Key(global::Godot.Key.Q)]),
+        (Actions.CameraRotateRight, [Key(global::Godot.Key.E)]),
 
         (Actions.Pause, [Key(global::Godot.Key.Space)]),
         (Actions.Speed1, [Key(global::Godot.Key.Key1)]),

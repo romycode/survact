@@ -1,30 +1,30 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: Survact\n"
-"PO-Revision-Date: 2026-11-05 20:17+0000\n"
+"PO-Revision-Date: 2026-11-05 20:33+0000\n"
 "Language: es\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-#: game/src/Core/GameController.cs:150
+#: game/src/Core/GameController.cs:153
 msgid "New world"
 msgstr "Mundo nuevo"
 
-#: game/src/Core/GameController.cs:157
+#: game/src/Core/GameController.cs:160
 msgid "Game saved"
 msgstr "Partida guardada"
 
-#: game/src/Core/GameController.cs:165
+#: game/src/Core/GameController.cs:168
 msgid "No saved game yet"
 msgstr "No hay partida guardada"
 
-#: game/src/Core/GameController.cs:177
+#: game/src/Core/GameController.cs:180
 msgid "The saved game is not compatible with this version"
 msgstr "La partida guardada no es compatible con esta versión"
 
-#: game/src/Core/GameController.cs:181
+#: game/src/Core/GameController.cs:184
 msgid "Game loaded"
 msgstr "Partida cargada"
 
@@ -82,29 +82,33 @@ msgid "move camera"
 msgstr "mover cámara"
 
 #: game/src/UI/Hud.cs:76
+msgid "rotate"
+msgstr "rotar"
+
+#: game/src/UI/Hud.cs:77
 msgid "pause"
 msgstr "pausa"
 
-#: game/src/UI/Hud.cs:77
+#: game/src/UI/Hud.cs:78
 msgid "speed (1/2/3)"
 msgstr "velocidad (1/2/3)"
 
-#: game/src/UI/Hud.cs:78
+#: game/src/UI/Hud.cs:79
 msgid "save"
 msgstr "guardar"
 
-#: game/src/UI/Hud.cs:79
+#: game/src/UI/Hud.cs:80
 msgid "load"
 msgstr "cargar"
 
-#: game/src/UI/Hud.cs:80
+#: game/src/UI/Hud.cs:81
 msgid "new world"
 msgstr "mundo nuevo"
 
-#: game/src/UI/Hud.cs:81
+#: game/src/UI/Hud.cs:82
 msgid "console"
 msgstr "consola"
 
-#: game/src/UI/Hud.cs:82
+#: game/src/UI/Hud.cs:83
 msgid "debug"
 msgstr "debug"

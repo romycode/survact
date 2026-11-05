@@ -1,4 +1,4 @@
-[gd_resource type="Theme" load_steps=5 format=3]
+[gd_resource type="Theme" load_steps=6 format=3]
 
 [sub_resource type="SystemFont" id="SystemFont_mono"]
 font_names = PackedStringArray("monospace")
@@ -25,6 +25,15 @@ bg_color = Color(0.07, 0.078, 0.1, 1)
 border_width_top = 1
 border_color = Color(0.784, 0.643, 0.392, 0.6)
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_bar"]
+content_margin_left = 12.0
+content_margin_top = 5.0
+content_margin_right = 12.0
+content_margin_bottom = 5.0
+bg_color = Color(0.106, 0.118, 0.149, 0.88)
+border_width_top = 1
+border_color = Color(0.784, 0.643, 0.392, 0.45)
+
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_none"]
 
 [resource]
@@ -32,8 +41,12 @@ default_font = SubResource("SystemFont_mono")
 default_font_size = 14
 AccentLabel/base_type = &"Label"
 AccentLabel/colors/font_color = Color(0.784, 0.643, 0.392, 1)
+AccentLabel/colors/font_outline_color = Color(0.05, 0.06, 0.08, 1)
+AccentLabel/constants/outline_size = 4
+BarPanel/base_type = &"PanelContainer"
+BarPanel/styles/panel = SubResource("StyleBoxFlat_bar")
 DimLabel/base_type = &"Label"
-DimLabel/colors/font_color = Color(0.541, 0.514, 0.439, 1)
+DimLabel/colors/font_color = Color(0.66, 0.63, 0.55, 1)
 Label/colors/font_color = Color(0.91, 0.863, 0.753, 1)
 LineEdit/colors/font_color = Color(0.91, 0.863, 0.753, 1)
 LineEdit/colors/caret_color = Color(0.784, 0.643, 0.392, 1)

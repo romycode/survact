@@ -41,11 +41,12 @@ public partial class GameController : Node, IDebugHost
     private double _windowTime;
     private double _simMsPerTick;
 
-    private Node2D _world = null!;
-    private TerrainRenderer _terrain = null!;
-    private ColonistRenderer _colonists = null!;
-    private Overlay _overlay = null!;
-    private CanvasModulate _daylight = null!;
+    private SubViewportContainer _retroView = null!;
+    private LightingRig _lighting = null!;
+    private TerrainView _terrain = null!;
+    private VegetationView _vegetation = null!;
+    private ColonistView _colonists = null!;
+    private HeaterView _heater = null!;
     private CameraRig _camera = null!;
     private Hud _hud = null!;
     private DebugConsole _console = null!;
@@ -59,12 +60,13 @@ public partial class GameController : Node, IDebugHost
 
     public override void _Ready()
     {
-        _world = GetNode<Node2D>("%World");
-        _terrain = GetNode<TerrainRenderer>("%Terrain");
-        _colonists = GetNode<ColonistRenderer>("%Colonists");
-        _overlay = GetNode<Overlay>("%Overlay");
-        _daylight = GetNode<CanvasModulate>("%Daylight");
-        _camera = GetNode<CameraRig>("%Camera");
+        _retroView = GetNode<SubViewportContainer>("%RetroView");
+        _lighting = GetNode<LightingRig>("%Lighting");
+        _terrain = GetNode<TerrainView>("%Terrain");
+        _vegetation = GetNode<VegetationView>("%Vegetation");
+        _colonists = GetNode<ColonistView>("%Colonists");
+        _heater = GetNode<HeaterView>("%Heater");
+        _camera = GetNode<CameraRig>("%CameraRig");
         _hud = GetNode<Hud>("%Hud");
         _console = GetNode<DebugConsole>("%DebugConsole");
         _debugOverlay = GetNode<DebugOverlay>("%DebugOverlay");
@@ -92,9 +94,10 @@ public partial class GameController : Node, IDebugHost
 
         float alpha = Paused ? 1f : (float)(_accumulator / TickDt);
         _terrain.Sync();
+        _vegetation.Sync();
         _colonists.Sync(alpha);
-        _overlay.Sync();
-        _daylight.Color = Daylight(Sim.TimeOfDay);
+        _heater.Sync(delta);
+        _lighting.Apply(Sim.TimeOfDay, Sim.Temperature);
 
         _windowTime += delta;
         if (_windowTime < 0.25) return;
@@ -186,8 +189,19 @@ public partial class GameController : Node, IDebugHost
 
     public void ClearConsole() => _console.ClearLog();
 
-    public void FocusTile(int x, int y) =>
-        _camera.CenterOn(new Vector2(x + 0.5f, y + 0.5f) * RenderConfig.TilePx);
+    public void FocusTile(int x, int y) => _camera.CenterOn(new Vector3(x + 0.5f, 0, y + 0.5f));
+
+    public int PixelScale
+    {
+        get => _retroView.StretchShrink;
+        set => _retroView.StretchShrink = Math.Clamp(value, 1, 6);
+    }
+
+    public bool RetroFilter
+    {
+        get => (bool)((ShaderMaterial)_retroView.Material).GetShaderParameter("enabled");
+        set => ((ShaderMaterial)_retroView.Material).SetShaderParameter("enabled", value);
+    }
 
     // ---- Internals ------------------------------------------------------------------------------
 
@@ -201,8 +215,9 @@ public partial class GameController : Node, IDebugHost
         _accumulator = 0;
 
         _terrain.Bind(sim);
+        _vegetation.Bind(sim);
         _colonists.Bind(sim);
-        _overlay.Bind(sim);
+        _heater.Bind(sim);
         FocusTile(sim.Colony.StockX, sim.Colony.StockY);
     }
 
@@ -229,16 +244,8 @@ public partial class GameController : Node, IDebugHost
 
     private Vector2I? HoveredTile()
     {
-        var p = _world.GetGlobalMousePosition() / RenderConfig.TilePx;
-        int x = Mathf.FloorToInt(p.X), y = Mathf.FloorToInt(p.Y);
+        if (!_camera.TryGetGroundUnderMouse(out var p)) return null;
+        int x = Mathf.FloorToInt(p.X), y = Mathf.FloorToInt(p.Z);
         return Sim.Map.InBounds(x, y) ? new Vector2I(x, y) : null;
-    }
-
-    /// <summary>Cheap day/night: tint the world canvas. UI lives on its own CanvasLayers and isn't affected.</summary>
-    private static Color Daylight(float timeOfDay)
-    {
-        float sun = Mathf.Clamp(Mathf.Sin(Mathf.Tau * (timeOfDay - 0.25f)) * 1.6f + 0.5f, 0f, 1f);
-        var night = new Color(0.32f, 0.36f, 0.55f);
-        return night.Lerp(Colors.White, sun);
     }
 }

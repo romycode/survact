@@ -18,4 +18,8 @@ public interface IDebugHost
     void ToggleDebugOverlay();
     void ClearConsole();
     void FocusTile(int x, int y);
+
+    /// <summary>Low-res render factor of the retro view (1 = native resolution).</summary>
+    int PixelScale { get; set; }
+    bool RetroFilter { get; set; }
 }
