@@ -13,6 +13,8 @@ public sealed class GameDataDto
     public required AiDto Ai { get; init; }
     public required StartDto Start { get; init; }
     public required TerrainDto Terrain { get; init; }
+    public required ScheduleDto Schedule { get; init; }
+    public required Dictionary<string, BuildingDto> Buildings { get; init; }
     public required Dictionary<string, TileDto> Tiles { get; init; }
 }
 
@@ -40,6 +42,7 @@ public sealed class HeaterDto
 {
     public required int RadiusTiles { get; init; }
     public required float WoodPerDegreePerDay { get; init; }
+    public required float BuildingBonus { get; init; }
 }
 
 public sealed class WorkDto
@@ -78,4 +81,25 @@ public sealed class TerrainDto
     public required int ClimbUpCost { get; init; }
     public required int ClimbDownCost { get; init; }
     public required float LapseRatePerLevel { get; init; }
+}
+
+public sealed class ScheduleDto
+{
+    public required float NightFrom { get; init; }
+    public required float NightUntil { get; init; }
+}
+
+public sealed class BuildingDto
+{
+    public required int[] Size { get; init; }
+    public required Dictionary<string, int> Cost { get; init; }
+    public required float BuildSeconds { get; init; }
+    public required int MaxBuilders { get; init; }
+    public ShelterDto? Shelter { get; init; }
+}
+
+public sealed class ShelterDto
+{
+    public required int Capacity { get; init; }
+    public required float Insulation { get; init; }
 }

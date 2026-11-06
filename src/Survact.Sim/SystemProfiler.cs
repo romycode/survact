@@ -5,7 +5,7 @@ namespace Survact.Sim;
 /// <summary>Accumulates wall time per system. Attach to Simulation.Profiler for the HUD or perf tests.</summary>
 public sealed class SystemProfiler
 {
-    public static readonly string[] Names = ["Climate", "Heater", "Needs", "Think", "Movement", "Work", "Death"];
+    public static readonly string[] Names = ["Climate", "Heater", "Needs", "Think", "Movement", "Work", "Construction", "Death"];
 
     private readonly long[] _ticks = new long[Names.Length];
     public long Steps { get; private set; }

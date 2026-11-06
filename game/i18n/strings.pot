@@ -1,112 +1,182 @@
 msgid ""
 msgstr ""
 "Project-Id-Version: Survact\n"
-"POT-Creation-Date: 2026-11-05 20:33+0000\n"
+"POT-Creation-Date: 2026-11-06 07:19+0000\n"
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 
-#: game/src/Core/GameController.cs:153
+#: game/src/Core/GameController.cs:156
+msgid "Construction cancelled, wood returned"
+msgstr ""
+
+#: game/src/Core/GameController.cs:178
 msgid "New world"
 msgstr ""
 
-#: game/src/Core/GameController.cs:160
+#: game/src/Core/GameController.cs:185
 msgid "Game saved"
 msgstr ""
 
-#: game/src/Core/GameController.cs:168
+#: game/src/Core/GameController.cs:193
 msgid "No saved game yet"
 msgstr ""
 
-#: game/src/Core/GameController.cs:180
+#: game/src/Core/GameController.cs:205
 msgid "The saved game is not compatible with this version"
 msgstr ""
 
-#: game/src/Core/GameController.cs:184
+#: game/src/Core/GameController.cs:209
 msgid "Game loaded"
 msgstr ""
 
 #. HUD labels are short and uppercase; keep them under ~10 characters.
-#: game/src/UI/Hud.cs:58
+#: game/src/UI/Hud.cs:70
 msgid "DAY"
 msgstr ""
 
-#: game/src/UI/Hud.cs:59
+#: game/src/UI/Hud.cs:71
 msgid "WOOD"
 msgstr ""
 
-#: game/src/UI/Hud.cs:59
+#: game/src/UI/Hud.cs:71
 msgid "FOOD"
 msgstr ""
 
-#: game/src/UI/Hud.cs:60
+#: game/src/UI/Hud.cs:72
 msgid "ALIVE"
 msgstr ""
 
-#: game/src/UI/Hud.cs:60
+#: game/src/UI/Hud.cs:72
 msgid "DEAD"
 msgstr ""
 
+#. colonists inside shelters / total shelter places.
+#: game/src/UI/Hud.cs:74
+msgid "SHELTER"
+msgstr ""
+
 #. state of the heater, shown after "HEATER".
-#: game/src/UI/Hud.cs:62
+#: game/src/UI/Hud.cs:76
 msgid "HEATER"
 msgstr ""
 
 #. state of the heater, shown after "HEATER".
-#: game/src/UI/Hud.cs:62
+#: game/src/UI/Hud.cs:76
 msgid "ON"
 msgstr ""
 
 #. state of the heater, shown after "HEATER".
-#: game/src/UI/Hud.cs:62
+#: game/src/UI/Hud.cs:76
 msgid "OFF"
 msgstr ""
 
 #. state of the heater, shown after "HEATER".
-#: game/src/UI/Hud.cs:62
+#: game/src/UI/Hud.cs:76
 msgid "SPEED"
 msgstr ""
 
-#: game/src/UI/Hud.cs:63
+#: game/src/UI/Hud.cs:77
 msgid "PAUSED"
 msgstr ""
 
-#: game/src/UI/Hud.cs:64
+#: game/src/UI/Hud.cs:78
 msgid "SIM"
 msgstr ""
 
-#: game/src/UI/Hud.cs:75
+#: game/src/UI/Hud.cs:98
+#: game/src/UI/Hud.cs:126
+msgid "wood"
+msgstr ""
+
+#: game/src/UI/Hud.cs:128
+msgid "sleeps"
+msgstr ""
+
+#: game/src/UI/Hud.cs:130
+msgid "click: build · right click: done"
+msgstr ""
+
+#: game/src/UI/Hud.cs:160
 msgid "move camera"
 msgstr ""
 
-#: game/src/UI/Hud.cs:76
+#: game/src/UI/Hud.cs:161
 msgid "rotate"
 msgstr ""
 
-#: game/src/UI/Hud.cs:77
+#: game/src/UI/Hud.cs:162
 msgid "pause"
 msgstr ""
 
-#: game/src/UI/Hud.cs:78
+#: game/src/UI/Hud.cs:163
 msgid "speed (1/2/3)"
 msgstr ""
 
-#: game/src/UI/Hud.cs:79
+#: game/src/UI/Hud.cs:164
 msgid "save"
 msgstr ""
 
-#: game/src/UI/Hud.cs:80
+#: game/src/UI/Hud.cs:165
 msgid "load"
 msgstr ""
 
-#: game/src/UI/Hud.cs:81
+#: game/src/UI/Hud.cs:166
 msgid "new world"
 msgstr ""
 
-#: game/src/UI/Hud.cs:82
+#: game/src/UI/Hud.cs:167
+msgid "cancel construction"
+msgstr ""
+
+#: game/src/UI/Hud.cs:168
 msgid "console"
 msgstr ""
 
-#: game/src/UI/Hud.cs:83
+#: game/src/UI/Hud.cs:169
 msgid "debug"
+msgstr ""
+
+#: game/src/UI/Texts.cs:14
+msgid "Tent"
+msgstr ""
+
+#: game/src/UI/Texts.cs:15
+msgid "Cabin"
+msgstr ""
+
+#: game/src/UI/Texts.cs:22
+msgid "Outside the map"
+msgstr ""
+
+#: game/src/UI/Texts.cs:23
+msgid "Needs clear ground: no trees, bushes, rocks or water"
+msgstr ""
+
+#: game/src/UI/Texts.cs:24
+msgid "The ground must be flat"
+msgstr ""
+
+#: game/src/UI/Texts.cs:25
+msgid "Something is already built there"
+msgstr ""
+
+#: game/src/UI/Texts.cs:26
+msgid "Too close to the heater"
+msgstr ""
+
+#: game/src/UI/Texts.cs:27
+msgid "The entrance is blocked"
+msgstr ""
+
+#: game/src/UI/Texts.cs:28
+msgid "Colonists can't reach it"
+msgstr ""
+
+#: game/src/UI/Texts.cs:29
+msgid "It would block another building's entrance"
+msgstr ""
+
+#: game/src/UI/Texts.cs:30
+msgid "Can't build here"
 msgstr ""

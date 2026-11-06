@@ -23,7 +23,9 @@
 
   "heater": {
     "radius_tiles": 6,
-    "wood_per_degree_per_day": 2.16
+    "wood_per_degree_per_day": 2.16,
+    // Degrees added to buildings whose centre is inside the heater radius while it burns.
+    "building_bonus": 15
   },
 
   "work": {
@@ -52,6 +54,22 @@
     "climb_up_cost": 12,
     "climb_down_cost": 4,
     "lapse_rate_per_level": 0.6
+  },
+
+  // Night is when colonists stop working and look for a free shelter (time of day, 0..1, 0.5 = noon).
+  "schedule": {
+    "night_from": 0.84,
+    "night_until": 0.24
+  },
+
+  // Buildings. size = [w, h] in tiles; the entrance is the tile in front of the south (+Z) side.
+  // cost is hauled from the stockpile by colonists, then max_builders work build_seconds in total.
+  // shelter.insulation = degrees added to the outside temperature for colonists inside at night.
+  "buildings": {
+    "tent":  { "size": [1, 1], "cost": { "wood": 8 },  "build_seconds": 8,  "max_builders": 2,
+               "shelter": { "capacity": 2, "insulation": 14 } },
+    "cabin": { "size": [2, 2], "cost": { "wood": 30 }, "build_seconds": 24, "max_builders": 4,
+               "shelter": { "capacity": 6, "insulation": 28 } }
   },
 
   // move_cost 0 = impassable. amount = units a fresh tile holds. depletes_to = tile once empty.

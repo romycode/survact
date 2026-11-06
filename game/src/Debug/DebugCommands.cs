@@ -35,6 +35,9 @@ public static class DebugCommands
         ["retro"] = new("retro [on|off]", "toggle the posterize/dither filter", Retro),
         ["camera"] = new("camera <oblique|perspective>", "oblique = Factorio-like ortho, Q/E 90° steps; perspective = free orbit", CameraMode),
         ["pitch"] = new("pitch <20-85>", "oblique camera tilt above the horizon (default 40; lower = more 3D)", (a, h) => { h.CameraPitch = float.Parse(a[0], CultureInfo.InvariantCulture); return $"pitch {h.CameraPitch:F0}°"; }),
+        ["build"] = new("build <type> <x> <y>", "place a construction site (type: name from game data)", Build),
+        ["cancel"] = new("cancel <id>", "cancel a construction site", (a, h) => { h.Sim.Enqueue(Command.CancelBuilding(Int(a[0]))); return $"queued {Command.CancelBuilding(Int(a[0]))}"; }),
+        ["buildings"] = new("buildings", "list buildings", ListBuildings),
         ["overlay"] = new("overlay", "toggle the debug overlay (also F3)", (_, h) => { h.ToggleDebugOverlay(); return "ok"; }),
         ["clear"] = new("clear", "clear the console", (_, h) => { h.ClearConsole(); return ""; }),
     };
@@ -140,6 +143,30 @@ public static class DebugCommands
             _ => throw new FormatException(),
         };
         return $"camera {(h.ObliqueCamera ? "oblique" : "perspective")}";
+    }
+
+    private static string Build(string[] a, IDebugHost h)
+    {
+        int type = h.Sim.Data.Buildings.IndexOf(a[0]);
+        if (type < 0) return Error($"unknown building '{a[0]}' (known: {string.Join(", ", h.Sim.Data.Buildings.All.Select(t => t.Name))})");
+        var cmd = Command.PlaceBuilding(type, Int(a[1]), Int(a[2]));
+        var check = Survact.Sim.Buildings.BuildRules.Check(h.Sim, type, cmd.B, cmd.C);
+        h.Sim.Enqueue(cmd);
+        return check == Survact.Sim.Buildings.PlacementError.None ? $"queued {cmd}" : Error($"will be rejected: {check}");
+    }
+
+    private static string ListBuildings(string[] a, IDebugHost h)
+    {
+        var store = h.Sim.Buildings;
+        if (store.Count == 0) return "no buildings";
+        var lines = new List<string>();
+        for (int id = 0; id < store.Count; id++)
+        {
+            ref var b = ref store[id];
+            var t = h.Sim.Data.Buildings[b.Type];
+            lines.Add($"#{id,-3} {t.Name,-6} {b.Stage,-7} at {b.X},{b.Y}  wood {b.Wood}/{t.WoodCost}  work {b.Work}/{t.BuildTicks}  inside {b.Occupants}");
+        }
+        return string.Join("\n", lines);
     }
 
     private static int Int(string s) => int.Parse(s, CultureInfo.InvariantCulture);

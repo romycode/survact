@@ -1,5 +1,6 @@
 namespace Survact.Sim.Entities;
 
+/// <summary>Stored in saves as a byte: append only.</summary>
 public enum ColonistState : byte
 {
     Idle,
@@ -7,6 +8,8 @@ public enum ColonistState : byte
     Gathering,
     Eating,
     Warming,
+    Constructing,
+    Sheltered,   // inside a building: hidden, protected from the cold by its insulation
 }
 
 /// <summary>How a walking colonist navigates.</summary>
@@ -19,6 +22,7 @@ public enum Nav : byte
     Stockpile,
 }
 
+/// <summary>Stored in saves as a byte: append only.</summary>
 public enum Job : byte
 {
     None,
@@ -26,6 +30,9 @@ public enum Job : byte
     Food,
     Eat,
     Warm,
+    Haul,      // stockpile → construction site, carrying wood (Carry > 0 = on the way to the site)
+    Build,     // work at a site whose materials are all delivered
+    Shelter,   // spend the night inside a shelter
 }
 
 /// <summary>
@@ -49,7 +56,8 @@ public sealed class Colonists
     public ColonistState[] State = [];
     public Job[] Job = [];
     public Nav[] Nav = [];
-    public int[] Target = [];       // tile index of current job target (-1 none)
+    public int[] Target = [];       // tile index of current gather target (-1 none), reserved on the map
+    public int[] Site = [];         // building id for Haul/Build/Shelter jobs (-1 none)
     public int[] Timer = [];        // ticks left in current action / think cooldown
     public int[] Carry = [];        // units carried (resource defined by Job)
 
@@ -74,6 +82,7 @@ public sealed class Colonists
         Job[i] = Entities.Job.None;
         Nav[i] = Entities.Nav.Path;
         Target[i] = -1;
+        Site[i] = -1;
         Timer[i] = 0;
         Carry[i] = 0;
         PathLength[i] = 0;
@@ -89,7 +98,7 @@ public sealed class Colonists
 
         X[i] = X[last]; Y[i] = Y[last]; PrevX[i] = PrevX[last]; PrevY[i] = PrevY[last];
         Hunger[i] = Hunger[last]; Warmth[i] = Warmth[last];
-        State[i] = State[last]; Job[i] = Job[last]; Nav[i] = Nav[last]; Target[i] = Target[last];
+        State[i] = State[last]; Job[i] = Job[last]; Nav[i] = Nav[last]; Target[i] = Target[last]; Site[i] = Site[last];
         Timer[i] = Timer[last]; Carry[i] = Carry[last];
         PathLength[i] = PathLength[last]; PathPos[i] = PathPos[last];
         Array.Copy(Path, last * MaxPathLength, Path, i * MaxPathLength, PathLength[last]);
@@ -107,7 +116,7 @@ public sealed class Colonists
         Array.Resize(ref PrevX, capacity); Array.Resize(ref PrevY, capacity);
         Array.Resize(ref Hunger, capacity); Array.Resize(ref Warmth, capacity);
         Array.Resize(ref State, capacity); Array.Resize(ref Job, capacity); Array.Resize(ref Nav, capacity);
-        Array.Resize(ref Target, capacity); Array.Resize(ref Timer, capacity);
+        Array.Resize(ref Target, capacity); Array.Resize(ref Site, capacity); Array.Resize(ref Timer, capacity);
         Array.Resize(ref Carry, capacity);
         Array.Resize(ref PathLength, capacity); Array.Resize(ref PathPos, capacity);
         Array.Resize(ref Path, capacity * MaxPathLength);

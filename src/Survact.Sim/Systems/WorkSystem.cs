@@ -1,3 +1,4 @@
+using Survact.Sim.Buildings;
 using Survact.Sim.Entities;
 
 namespace Survact.Sim.Systems;
@@ -32,6 +33,27 @@ internal static class WorkSystem
                 case ColonistState.Warming:
                     if (!colony.HeaterLit || c.Warmth[i] >= sim.Balance.WarmEnough) ToIdle(c, i);
                     break;
+
+                case ColonistState.Constructing:
+                {
+                    ref var b = ref sim.Buildings[c.Site[i]];
+                    // Needs first: a builder stops to eat or warm up (and can come back later).
+                    bool needsBreak = (c.Hunger[i] < sim.Balance.EatThreshold && colony.Food > 0)
+                                      || (c.Warmth[i] < sim.Balance.WarmThreshold && colony.HeaterLit);
+                    if (b.Stage != BuildingStage.Site || needsBreak) Jobs.ToIdle(sim, i);
+                    else b.Work++;
+                    break;
+                }
+
+                case ColonistState.Sheltered:
+                {
+                    // Leave at dawn, earlier to eat, or to warm up at the heater if this shelter is too cold.
+                    bool hungry = c.Hunger[i] < sim.Balance.EatThreshold && colony.Food > 0;
+                    bool freezing = c.Warmth[i] < sim.Balance.WarmThreshold && colony.HeaterLit
+                                    && sim.ShelterTemperature(c.Site[i]) < sim.Balance.ComfortTemperature;
+                    if (!sim.IsNight || hungry || freezing) Jobs.ToIdle(sim, i);
+                    break;
+                }
             }
         }
     }

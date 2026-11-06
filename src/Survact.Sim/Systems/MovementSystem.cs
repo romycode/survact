@@ -1,3 +1,4 @@
+using Survact.Sim.Buildings;
 using Survact.Sim.Entities;
 
 namespace Survact.Sim.Systems;
@@ -14,7 +15,7 @@ internal static class MovementSystem
             if (c.State[i] != ColonistState.Walking) continue;
 
             bool arrived = c.Nav[i] == Nav.Path ? StepPath(sim, i) : StepStockpile(sim, i);
-            if (arrived) Arrive(sim, i);
+            if (arrived && c.State[i] == ColonistState.Walking) Arrive(sim, i);
         }
     }
 
@@ -29,6 +30,16 @@ internal static class MovementSystem
         while (budget > 0 && c.PathPos[i] < c.PathLength[i])
         {
             int node = c.Path[pathBase + c.PathPos[i]];
+
+            // The world changes under stored paths (a building is placed, a cliff appears later):
+            // re-check each step and give up cleanly instead of walking through walls.
+            int from = c.PathPos[i] == 0 ? sim.Map.Index((int)c.X[i], (int)c.Y[i]) : c.Path[pathBase + c.PathPos[i] - 1];
+            if (from != node && !sim.Map.CanStep(from, node))
+            {
+                Jobs.ToIdle(sim, i, sim.Balance.FailedPathCooldownTicks);
+                return false;
+            }
+
             if (MoveToward(c, i, node % width + 0.5f, node / width + 0.5f, ref budget)) c.PathPos[i]++;
         }
         return c.PathPos[i] >= c.PathLength[i];
@@ -67,6 +78,28 @@ internal static class MovementSystem
         return false;
     }
 
+    /// <summary>At the stockpile with a haul job: take what the site still needs, then path to it.</summary>
+    private static void PickUpForSite(Simulation sim, int i)
+    {
+        var c = sim.Colonists;
+        ref var b = ref sim.Buildings[c.Site[i]];
+        var t = sim.Data.Buildings[b.Type];
+        int need = t.WoodCost - b.Wood - b.WoodIncoming;
+        int take = Math.Min(Math.Min(need, sim.Balance.CarryCapacity), sim.Colony.Wood);
+        if (b.Stage != BuildingStage.Site || take <= 0)
+        {
+            Jobs.ToIdle(sim, i); // releases the hauler claim
+            return;
+        }
+
+        b.Haulers--; // claim becomes wood in transit
+        sim.Colony.Wood -= take;
+        b.WoodIncoming += take;
+        c.Carry[i] = take;
+        if (!Jobs.PathToEntrance(sim, i, c.Site[i]))
+            Jobs.ToIdle(sim, i, sim.Balance.FailedPathCooldownTicks); // refunds the wood
+    }
+
     /// <summary>Moves toward a point spending budget. Returns true when the point is reached.</summary>
     private static bool MoveToward(Colonists c, int i, float tx, float ty, ref float budget)
     {
@@ -94,6 +127,29 @@ internal static class MovementSystem
 
         switch (c.Job[i])
         {
+            case Job.Haul when c.Carry[i] == 0:
+                PickUpForSite(sim, i);
+                break;
+
+            case Job.Haul:
+            {
+                ref var b = ref sim.Buildings[c.Site[i]];
+                b.Wood += c.Carry[i];
+                b.WoodIncoming -= c.Carry[i];
+                c.Carry[i] = 0;
+                c.Site[i] = -1; // delivered: nothing left to release
+                Jobs.ToIdle(sim, i);
+                break;
+            }
+
+            case Job.Build:
+                c.State[i] = ColonistState.Constructing;
+                break;
+
+            case Job.Shelter:
+                c.State[i] = ColonistState.Sheltered;
+                break;
+
             case Job.Eat:
                 c.State[i] = ColonistState.Eating;
                 c.Timer[i] = sim.Balance.EatTicks;

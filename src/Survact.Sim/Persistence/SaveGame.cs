@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using Survact.Sim.Buildings;
 using Survact.Sim.Commands;
 using Survact.Sim.Data;
 using Survact.Sim.Entities;
@@ -11,12 +12,12 @@ namespace Survact.Sim.Persistence;
 /// Bump <see cref="Version"/> on any layout change and add a migration in <see cref="Load"/>.
 /// Game data (balance) is NOT stored: a save loads with the current data, so balance patches
 /// apply to existing saves, as players expect.
-/// v2: climate offset + pending commands. v3: terrain levels.
+/// v2: climate offset + pending commands. v3: terrain levels. v4: buildings + colonist sites.
 /// </summary>
 public static class SaveGame
 {
     private const uint Magic = 0x54565253; // "SRVT"
-    public const int Version = 3;
+    public const int Version = 4;
 
     public static void Save(Simulation sim, Stream stream)
     {
@@ -52,10 +53,22 @@ public static class SaveGame
         WriteSpan<float>(w, c.PrevX.AsSpan(0, n)); WriteSpan<float>(w, c.PrevY.AsSpan(0, n));
         WriteSpan<float>(w, c.Hunger.AsSpan(0, n)); WriteSpan<float>(w, c.Warmth.AsSpan(0, n));
         WriteSpan<ColonistState>(w, c.State.AsSpan(0, n)); WriteSpan<Job>(w, c.Job.AsSpan(0, n)); WriteSpan<Nav>(w, c.Nav.AsSpan(0, n));
-        WriteSpan<int>(w, c.Target.AsSpan(0, n)); WriteSpan<int>(w, c.Timer.AsSpan(0, n));
+        WriteSpan<int>(w, c.Target.AsSpan(0, n)); WriteSpan<int>(w, c.Site.AsSpan(0, n)); WriteSpan<int>(w, c.Timer.AsSpan(0, n));
         WriteSpan<int>(w, c.Carry.AsSpan(0, n));
         WriteSpan<int>(w, c.PathLength.AsSpan(0, n)); WriteSpan<int>(w, c.PathPos.AsSpan(0, n));
         for (int i = 0; i < n; i++) WriteSpan<int>(w, c.Path.AsSpan(i * Colonists.MaxPathLength, c.PathLength[i]));
+
+        // Buildings: type stored by NAME so saves survive building types being added to the data.
+        var buildings = sim.Buildings;
+        w.Write(buildings.Count);
+        for (int id = 0; id < buildings.Count; id++)
+        {
+            ref var b = ref buildings[id];
+            w.Write(sim.Data.Buildings[b.Type].Name);
+            w.Write(b.X); w.Write(b.Y); w.Write((byte)b.Stage);
+            w.Write(b.Wood); w.Write(b.WoodIncoming); w.Write(b.Haulers); w.Write(b.Work);
+            w.Write(b.Builders); w.Write(b.Occupants);
+        }
 
         // Commands queued but not yet applied (saved between two ticks).
         w.Write(sim.PendingCommands.Count);
@@ -101,17 +114,32 @@ public static class SaveGame
         ReadSpan<float>(r, c.PrevX.AsSpan(0, n)); ReadSpan<float>(r, c.PrevY.AsSpan(0, n));
         ReadSpan<float>(r, c.Hunger.AsSpan(0, n)); ReadSpan<float>(r, c.Warmth.AsSpan(0, n));
         ReadSpan<ColonistState>(r, c.State.AsSpan(0, n)); ReadSpan<Job>(r, c.Job.AsSpan(0, n)); ReadSpan<Nav>(r, c.Nav.AsSpan(0, n));
-        ReadSpan<int>(r, c.Target.AsSpan(0, n)); ReadSpan<int>(r, c.Timer.AsSpan(0, n));
+        ReadSpan<int>(r, c.Target.AsSpan(0, n)); ReadSpan<int>(r, c.Site.AsSpan(0, n)); ReadSpan<int>(r, c.Timer.AsSpan(0, n));
         ReadSpan<int>(r, c.Carry.AsSpan(0, n));
         ReadSpan<int>(r, c.PathLength.AsSpan(0, n)); ReadSpan<int>(r, c.PathPos.AsSpan(0, n));
         for (int i = 0; i < n; i++) ReadSpan<int>(r, c.Path.AsSpan(i * Colonists.MaxPathLength, c.PathLength[i]));
+
+        var buildings = new BuildingStore();
+        int buildingCount = r.ReadInt32();
+        for (int id = 0; id < buildingCount; id++)
+        {
+            string typeName = r.ReadString();
+            int type = data.Buildings.IndexOf(typeName);
+            if (type < 0) throw new InvalidDataException($"Save uses building type '{typeName}', missing from the game data.");
+            buildings.Add(new Building
+            {
+                Type = type, X = r.ReadInt32(), Y = r.ReadInt32(), Stage = (BuildingStage)r.ReadByte(),
+                Wood = r.ReadInt32(), WoodIncoming = r.ReadInt32(), Haulers = r.ReadInt32(), Work = r.ReadInt32(),
+                Builders = r.ReadInt32(), Occupants = r.ReadInt32(),
+            });
+        }
 
         int pendingCount = r.ReadInt32();
         var pending = new List<Command>(pendingCount);
         for (int i = 0; i < pendingCount; i++)
             pending.Add(new Command((CommandKind)r.ReadByte(), r.ReadInt32(), r.ReadInt32(), r.ReadInt32()));
 
-        var sim = new Simulation(settings, data, map, c, colony, rng)
+        var sim = new Simulation(settings, data, map, c, colony, rng, buildings)
         {
             Tick = tick,
             Temperature = temperature,
@@ -120,6 +148,13 @@ public static class SaveGame
         };
         exhausted.CopyTo(sim.SearchExhaustedUntil.AsSpan());
         sim.RestorePending(pending);
+
+        // The occupancy layer is derived state: rebuild it from the buildings.
+        for (int id = 0; id < buildings.Count; id++)
+        {
+            ref var b = ref buildings[id];
+            if (b.Stage != BuildingStage.Removed) sim.Occupy(id, data.Buildings[b.Type], b.X, b.Y);
+        }
         return sim;
     }
 

@@ -1,6 +1,7 @@
 using Godot;
 using Survact.Game.World.Geometry;
 using Survact.Sim;
+using Survact.Sim.Entities;
 
 namespace Survact.Game.World;
 
@@ -55,7 +56,9 @@ public partial class ColonistView : MultiMeshInstance3D
             float ground = TerrainMesher.SurfaceAt(map, x, z);
             _height[i] = Mathf.Abs(_height[i] - ground) > 3f ? ground : Mathf.Lerp(_height[i], ground, follow);
 
-            _mesh.SetInstanceTransform(i, new Transform3D(new Basis(Vector3.Up, _yaw[i]), new Vector3(x, _height[i], z)));
+            // Sheltered colonists are inside a building: collapse their instance to hide it.
+            var basis = c.State[i] == ColonistState.Sheltered ? new Basis(Vector3.Up, 0).Scaled(Vector3.Zero) : new Basis(Vector3.Up, _yaw[i]);
+            _mesh.SetInstanceTransform(i, new Transform3D(basis, new Vector3(x, _height[i], z)));
             _mesh.SetInstanceColor(i, Palette.ColonistColor(c.State[i], c.Job[i], c.Carry[i], c.Warmth[i], c.Hunger[i]));
         }
     }

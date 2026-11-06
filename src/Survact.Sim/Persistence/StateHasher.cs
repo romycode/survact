@@ -43,12 +43,16 @@ internal static class StateHasher
         MixBytes(ref h, MemoryMarshal.AsBytes(c.Job.AsSpan(0, n)));
         MixBytes(ref h, MemoryMarshal.AsBytes(c.Nav.AsSpan(0, n)));
         MixBytes(ref h, MemoryMarshal.AsBytes(c.Target.AsSpan(0, n)));
+        MixBytes(ref h, MemoryMarshal.AsBytes(c.Site.AsSpan(0, n)));
         MixBytes(ref h, MemoryMarshal.AsBytes(c.Timer.AsSpan(0, n)));
         MixBytes(ref h, MemoryMarshal.AsBytes(c.Carry.AsSpan(0, n)));
         MixBytes(ref h, MemoryMarshal.AsBytes(c.PathLength.AsSpan(0, n)));
         MixBytes(ref h, MemoryMarshal.AsBytes(c.PathPos.AsSpan(0, n)));
         for (int i = 0; i < n; i++)
             MixBytes(ref h, MemoryMarshal.AsBytes(c.Path.AsSpan(i * Colonists.MaxPathLength, c.PathLength[i])));
+
+        Mix(ref h, sim.Buildings.Count);
+        MixBytes(ref h, MemoryMarshal.AsBytes(sim.Buildings.AsSpan()));
 
         Mix(ref h, sim.PendingCommands.Count);
         foreach (var cmd in sim.PendingCommands)

@@ -27,6 +27,12 @@ public static class Actions
     public static readonly StringName QuickLoad = "game_quick_load";
     public static readonly StringName NewWorld = "game_new_world";
 
+    public static readonly StringName BuildPlace = "build_place";
+    public static readonly StringName BuildExit = "build_exit";
+    public static readonly StringName BuildCancelSite = "build_cancel_site";
+    /// <summary>Toolbar slots, in toolbar order (cheapest building first).</summary>
+    public static readonly StringName[] BuildSlots = ["build_slot_1", "build_slot_2", "build_slot_3", "build_slot_4"];
+
     public static readonly StringName DebugConsole = "debug_console";
     public static readonly StringName DebugOverlay = "debug_overlay";
 }

@@ -42,9 +42,20 @@ public partial class DebugOverlay : CanvasLayer
             float felt = sim.Temperature - sim.Balance.LapseRatePerLevel * map.LevelAt(idx);
             _sb.Append($"\ntile ({t.X},{t.Y})  {map.Get(idx)}  amount {map.AmountAt(idx)}{(map.IsReserved(idx) ? "  RESERVED" : "")}\n")
                .Append($"level {map.LevelAt(idx)}  felt {felt:F1}°C\n")
+               .Append(BuildingLine(sim, map.BuildingAt(idx)))
                .Append($"region {(region == Regions.None ? "-" : region.ToString())}  to stockpile {(dist == FlowField.Unreachable ? "unreachable" : dist.ToString())}\n");
         }
 
         _text.Text = _sb.ToString();
+    }
+
+    private static string BuildingLine(Simulation sim, int id)
+    {
+        if (id < 0) return "";
+        ref var b = ref sim.Buildings[id];
+        var t = sim.Data.Buildings[b.Type];
+        return $"building #{id} {t.Name} {b.Stage}  wood {b.Wood}+{b.WoodIncoming}/{t.WoodCost} haulers {b.Haulers}  " +
+               $"work {b.Work}/{t.BuildTicks} builders {b.Builders}  inside {b.Occupants}/{t.ShelterCapacity}" +
+               (t.IsShelter && b.Stage == Survact.Sim.Buildings.BuildingStage.Built ? $" at {sim.ShelterTemperature(id):F1}°C" : "") + "\n";
     }
 }

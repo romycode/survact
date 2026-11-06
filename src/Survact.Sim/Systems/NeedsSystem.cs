@@ -1,3 +1,5 @@
+using Survact.Sim.Entities;
+
 namespace Survact.Sim.Systems;
 
 /// <summary>Hot loop over plain arrays: this is the shape every per-entity system should have.</summary>
@@ -22,10 +24,18 @@ internal static class NeedsSystem
             hunger[i] = MathF.Max(0, hunger[i] - sim.Balance.HungerPerTick);
 
             // Higher up is colder: the temperature a colonist feels drops with its terrain level.
-            float coldLoss = MathF.Max(0, comfortGap + lapse * map.LevelAt((int)x[i], (int)y[i])) * lossPerDegree;
+            // Inside a shelter the building's insulation is added on top.
+            float gap = comfortGap + lapse * map.LevelAt((int)x[i], (int)y[i]);
+            bool sheltered = c.State[i] == ColonistState.Sheltered;
+            if (sheltered)
+            {
+                ref var b = ref sim.Buildings[c.Site[i]];
+                gap -= sim.ShelterWarmth(b.Type, b.X, b.Y);
+            }
+            float coldLoss = MathF.Max(0, gap) * lossPerDegree;
 
             float w = warmth[i];
-            if (heaterLit && colony.InHeatRange(x[i], y[i], heatRadius)) w += sim.Balance.HeaterWarmthPerTick;
+            if (!sheltered && heaterLit && colony.InHeatRange(x[i], y[i], heatRadius)) w += sim.Balance.HeaterWarmthPerTick;
             else if (coldLoss > 0) w -= coldLoss;
             else w += sim.Balance.AmbientRecoveryPerTick;
             warmth[i] = Math.Clamp(w, 0f, 1f);
@@ -43,7 +53,7 @@ internal static class DeathSystem
         {
             if (c.Hunger[i] > 0 && c.Warmth[i] > 0) continue;
 
-            if (c.Target[i] >= 0) sim.Map.Release(c.Target[i]);
+            Jobs.Release(sim, i);
             sim.Colony.Deaths++;
             c.RemoveAt(i);
         }

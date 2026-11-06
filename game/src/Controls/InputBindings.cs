@@ -30,6 +30,14 @@ public static class InputBindings
         (Actions.QuickLoad, [Key(global::Godot.Key.F9)]),
         (Actions.NewWorld, [Key(global::Godot.Key.N, ctrl: true)]),
 
+        (Actions.BuildPlace, [Mouse(MouseButton.Left)]),
+        (Actions.BuildExit, [Mouse(MouseButton.Right), Key(global::Godot.Key.Escape)]),
+        (Actions.BuildCancelSite, [Key(global::Godot.Key.Delete), Key(global::Godot.Key.Backspace)]),
+        (Actions.BuildSlots[0], [Key(global::Godot.Key.Z)]),
+        (Actions.BuildSlots[1], [Key(global::Godot.Key.X)]),
+        (Actions.BuildSlots[2], [Key(global::Godot.Key.C)]),
+        (Actions.BuildSlots[3], [Key(global::Godot.Key.V)]),
+
         // QuoteLeft = the key left of "1" on every layout (` on US, º on Spanish).
         (Actions.DebugConsole, [Key(global::Godot.Key.Quoteleft), Key(global::Godot.Key.F1)]),
         (Actions.DebugOverlay, [Key(global::Godot.Key.F3)]),

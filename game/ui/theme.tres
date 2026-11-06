@@ -1,4 +1,4 @@
-[gd_resource type="Theme" load_steps=6 format=3]
+[gd_resource type="Theme" load_steps=9 format=3]
 
 [sub_resource type="SystemFont" id="SystemFont_mono"]
 font_names = PackedStringArray("monospace")
@@ -34,6 +34,42 @@ bg_color = Color(0.106, 0.118, 0.149, 0.88)
 border_width_top = 1
 border_color = Color(0.784, 0.643, 0.392, 0.45)
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button"]
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 10.0
+content_margin_bottom = 5.0
+bg_color = Color(0.16, 0.17, 0.21, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.784, 0.643, 0.392, 0.45)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_hover"]
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 10.0
+content_margin_bottom = 5.0
+bg_color = Color(0.22, 0.23, 0.28, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.784, 0.643, 0.392, 0.9)
+
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_button_pressed"]
+content_margin_left = 10.0
+content_margin_top = 5.0
+content_margin_right = 10.0
+content_margin_bottom = 5.0
+bg_color = Color(0.784, 0.643, 0.392, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.95, 0.85, 0.6, 1)
+
 [sub_resource type="StyleBoxEmpty" id="StyleBoxEmpty_none"]
 
 [resource]
@@ -45,6 +81,15 @@ AccentLabel/colors/font_outline_color = Color(0.05, 0.06, 0.08, 1)
 AccentLabel/constants/outline_size = 4
 BarPanel/base_type = &"PanelContainer"
 BarPanel/styles/panel = SubResource("StyleBoxFlat_bar")
+Button/colors/font_color = Color(0.91, 0.863, 0.753, 1)
+Button/colors/font_hover_color = Color(1, 0.95, 0.85, 1)
+Button/colors/font_pressed_color = Color(0.106, 0.118, 0.149, 1)
+Button/colors/font_hover_pressed_color = Color(0.106, 0.118, 0.149, 1)
+Button/styles/focus = SubResource("StyleBoxEmpty_none")
+Button/styles/hover = SubResource("StyleBoxFlat_button_hover")
+Button/styles/hover_pressed = SubResource("StyleBoxFlat_button_pressed")
+Button/styles/normal = SubResource("StyleBoxFlat_button")
+Button/styles/pressed = SubResource("StyleBoxFlat_button_pressed")
 DimLabel/base_type = &"Label"
 DimLabel/colors/font_color = Color(0.66, 0.63, 0.55, 1)
 Label/colors/font_color = Color(0.91, 0.863, 0.753, 1)

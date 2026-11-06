@@ -6,6 +6,8 @@ public enum CommandKind : byte
     SpawnColonists = 1,
     AddStock = 2,
     SetClimateOffset = 3,
+    PlaceBuilding = 4,
+    CancelBuilding = 5,
 }
 
 /// <summary>
@@ -28,8 +30,16 @@ public readonly record struct Command(CommandKind Kind, int A = 0, int B = 0, in
     public static Command SetClimateOffset(float degrees) =>
         new(CommandKind.SetClimateOffset, (int)MathF.Round(degrees * 10f));
 
+    /// <summary>Player: place a construction site of building type <paramref name="type"/> with its top-left at (x, y).</summary>
+    public static Command PlaceBuilding(int type, int x, int y) => new(CommandKind.PlaceBuilding, type, x, y);
+
+    /// <summary>Player: cancel a construction site; delivered wood goes back to the stockpile.</summary>
+    public static Command CancelBuilding(int buildingId) => new(CommandKind.CancelBuilding, buildingId);
+
     public override string ToString() => Kind switch
     {
+        CommandKind.PlaceBuilding => $"PlaceBuilding(type {A} at {B},{C})",
+        CommandKind.CancelBuilding => $"CancelBuilding(#{A})",
         CommandKind.SpawnColonists => $"SpawnColonists({A},{B} x{C})",
         CommandKind.AddStock => $"AddStock(wood {A:+#;-#;0}, food {B:+#;-#;0})",
         CommandKind.SetClimateOffset => $"SetClimateOffset({A / 10f:+0.0;-0.0}°C)",

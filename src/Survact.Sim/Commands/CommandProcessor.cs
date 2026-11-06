@@ -1,3 +1,5 @@
+using Survact.Sim.Buildings;
+
 namespace Survact.Sim.Commands;
 
 /// <summary>
@@ -32,6 +34,22 @@ internal static class CommandProcessor
                 if (cmd.A is < -1000 or > 1000) return "offset must be within ±100°C";
                 sim.ClimateOffset = cmd.A / 10f;
                 return null;
+
+            case CommandKind.PlaceBuilding:
+            {
+                var error = BuildRules.Check(sim, cmd.A, cmd.B, cmd.C);
+                if (error != PlacementError.None) return $"can't place: {error}";
+                sim.PlaceSite(cmd.A, cmd.B, cmd.C);
+                return null;
+            }
+
+            case CommandKind.CancelBuilding:
+            {
+                if ((uint)cmd.A >= (uint)sim.Buildings.Count) return "no such building";
+                if (sim.Buildings[cmd.A].Stage != BuildingStage.Site) return "only construction sites can be cancelled";
+                sim.RemoveBuilding(cmd.A);
+                return null;
+            }
 
             default:
                 return $"unknown command kind {(byte)cmd.Kind}";

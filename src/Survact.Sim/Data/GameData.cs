@@ -12,11 +12,13 @@ public sealed class GameData
 {
     public Balance Balance { get; }
     public TileTable Tiles { get; }
+    public BuildingTable Buildings { get; }
 
-    private GameData(Balance balance, TileTable tiles)
+    private GameData(Balance balance, TileTable tiles, BuildingTable buildings)
     {
         Balance = balance;
         Tiles = tiles;
+        Buildings = buildings;
     }
 
     private static readonly JsonSerializerOptions Options = new()
@@ -45,10 +47,11 @@ public sealed class GameData
         var errors = new List<string>();
         var balance = Balance.Bake(dto, errors);
         var tiles = TileTable.Bake(dto.Tiles, dto.Terrain, errors);
+        var buildings = BuildingTable.Bake(dto.Buildings, errors);
         if (errors.Count > 0)
             throw new GameDataException($"{sourceName}:\n  - " + string.Join("\n  - ", errors));
 
-        return new GameData(balance, tiles);
+        return new GameData(balance, tiles, buildings);
     }
 }
 

@@ -6,6 +6,7 @@ using Survact.Game.UI;
 using Survact.Game.World;
 using Survact.Game.World.Geometry;
 using Survact.Sim;
+using Survact.Sim.Buildings;
 using Survact.Sim.Commands;
 using Survact.Sim.Data;
 using Survact.Sim.Persistence;
@@ -48,6 +49,8 @@ public partial class GameController : Node, IDebugHost
     private VegetationView _vegetation = null!;
     private ColonistView _colonists = null!;
     private HeaterView _heater = null!;
+    private BuildingView _buildings = null!;
+    private BuildPlacement _placement = null!;
     private CameraRig _camera = null!;
     private Hud _hud = null!;
     private DebugConsole _console = null!;
@@ -67,6 +70,8 @@ public partial class GameController : Node, IDebugHost
         _vegetation = GetNode<VegetationView>("%Vegetation");
         _colonists = GetNode<ColonistView>("%Colonists");
         _heater = GetNode<HeaterView>("%Heater");
+        _buildings = GetNode<BuildingView>("%Buildings");
+        _placement = GetNode<BuildPlacement>("%BuildPlacement");
         _camera = GetNode<CameraRig>("%CameraRig");
         _hud = GetNode<Hud>("%Hud");
         _console = GetNode<DebugConsole>("%DebugConsole");
@@ -101,6 +106,8 @@ public partial class GameController : Node, IDebugHost
         _vegetation.Sync();
         _colonists.Sync(alpha, delta);
         _heater.Sync(delta);
+        _buildings.Sync();
+        _hud.RefreshBuildInfo(Sim, _placement.Type, _placement.Origin, _placement.Error);
         _lighting.Apply(Sim.TimeOfDay, Sim.Temperature);
 
         _windowTime += delta;
@@ -125,6 +132,7 @@ public partial class GameController : Node, IDebugHost
         else if (@event.IsActionPressed(Actions.QuickLoad)) QuickLoad();
         else if (@event.IsActionPressed(Actions.NewWorld)) NewWorld(null);
         else if (@event.IsActionPressed(Actions.DebugOverlay)) ToggleDebugOverlay();
+        else if (BuildSlotPressed(@event) is int slot) OnBuildSelected(_hud.ToolAt(slot));
         else return;
 
         GetViewport().SetInputAsHandled();
@@ -133,6 +141,19 @@ public partial class GameController : Node, IDebugHost
     // ---- Signal handlers (wired in Main.tscn) -------------------------------------------------
 
     public void OnConsoleCommandSubmitted(string line) => _console.Print(DebugCommands.Execute(line, this));
+
+    /// <summary>Toolbar button or hotkey: select that building, or deselect if it's already selected.</summary>
+    public void OnBuildSelected(int type)
+    {
+        if (type < 0) return;
+        _placement.SetTool(_placement.Type == type ? -1 : type);
+    }
+
+    public void OnToolChanged(int type) => _hud.SetActiveTool(type);
+
+    public void OnPlacementFailed(int error) => _hud.Notify(Texts.Placement(this, (PlacementError)error));
+
+    public void OnSiteCancelled() => _hud.Notify(Tr("Construction cancelled, wood returned"));
 
     // ---- Game operations (also used by the debug console through IDebugHost) ------------------
 
@@ -239,6 +260,9 @@ public partial class GameController : Node, IDebugHost
         _camera.GroundHeight = (x, z) => TerrainMesher.SurfaceAt(sim.Map, x, z);
         _terrain.Bind(sim);
         _vegetation.Bind(sim);
+        _buildings.Bind(sim);
+        _placement.Bind(sim, _camera);
+        _hud.BindBuildTools(sim);
         _colonists.Bind(sim);
         _heater.Bind(sim);
         FocusTile(sim.Colony.StockX, sim.Colony.StockY);
@@ -263,6 +287,13 @@ public partial class GameController : Node, IDebugHost
 
         // Can't keep up (debugger pause, hitch, too high a speed): drop the debt instead of spiralling.
         if (steps == MaxStepsPerFrame && _accumulator > TickDt) _accumulator = 0;
+    }
+
+    private static int? BuildSlotPressed(InputEvent @event)
+    {
+        for (int k = 0; k < Actions.BuildSlots.Length; k++)
+            if (@event.IsActionPressed(Actions.BuildSlots[k])) return k;
+        return null;
     }
 
     private static float FogScaleFor(CameraRig.ViewMode mode) =>

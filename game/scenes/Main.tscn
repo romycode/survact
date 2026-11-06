@@ -1,4 +1,4 @@
-[gd_scene load_steps=14 format=3]
+[gd_scene load_steps=16 format=3]
 
 [ext_resource type="Script" path="res://src/Core/GameController.cs" id="1_game"]
 [ext_resource type="Shader" path="res://shaders/retro.gdshader" id="2_retro"]
@@ -11,6 +11,8 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/Hud.tscn" id="9_hud"]
 [ext_resource type="PackedScene" path="res://scenes/debug/DebugOverlay.tscn" id="10_overlay"]
 [ext_resource type="PackedScene" path="res://scenes/debug/DebugConsole.tscn" id="11_console"]
+[ext_resource type="Script" path="res://src/World/BuildingView.cs" id="12_buildings"]
+[ext_resource type="Script" path="res://src/World/BuildPlacement.cs" id="13_placement"]
 
 [sub_resource type="ShaderMaterial" id="Mat_retro"]
 shader = ExtResource("2_retro")
@@ -86,6 +88,14 @@ script = ExtResource("6_colonists")
 [node name="Heater" parent="RetroView/Viewport3D/World" instance=ExtResource("7_heater")]
 unique_name_in_owner = true
 
+[node name="Buildings" type="Node3D" parent="RetroView/Viewport3D/World"]
+unique_name_in_owner = true
+script = ExtResource("12_buildings")
+
+[node name="BuildPlacement" type="Node3D" parent="RetroView/Viewport3D/World"]
+unique_name_in_owner = true
+script = ExtResource("13_placement")
+
 [node name="CameraRig" type="Node3D" parent="RetroView/Viewport3D/World"]
 unique_name_in_owner = true
 script = ExtResource("8_camera")
@@ -105,3 +115,7 @@ unique_name_in_owner = true
 unique_name_in_owner = true
 
 [connection signal="CommandSubmitted" from="DebugConsole" to="." method="OnConsoleCommandSubmitted"]
+[connection signal="BuildSelected" from="Hud" to="." method="OnBuildSelected"]
+[connection signal="ToolChanged" from="RetroView/Viewport3D/World/BuildPlacement" to="." method="OnToolChanged"]
+[connection signal="PlacementFailed" from="RetroView/Viewport3D/World/BuildPlacement" to="." method="OnPlacementFailed"]
+[connection signal="SiteCancelled" from="RetroView/Viewport3D/World/BuildPlacement" to="." method="OnSiteCancelled"]

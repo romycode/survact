@@ -30,6 +30,8 @@ public sealed class Balance
     // Heater
     public int HeatRadius { get; private init; }
     public float HeaterBurnPerDegreeTick { get; private init; }
+    /// <summary>Degrees added to buildings inside the heater radius while it burns.</summary>
+    public float HeaterBuildingBonus { get; private init; }
 
     // Work
     public float MoveSpeedTilesPerTick { get; private init; }
@@ -44,6 +46,15 @@ public sealed class Balance
     public int IdleCooldownTicks { get; private init; }
     public int FailedPathCooldownTicks { get; private init; }
     public int ExhaustedSearchMemoTicks { get; private init; }
+
+    // Schedule (time of day, 0..1)
+    public float NightFrom { get; private init; }
+    public float NightUntil { get; private init; }
+
+    public bool IsNight(float timeOfDay) =>
+        NightFrom > NightUntil
+            ? timeOfDay >= NightFrom || timeOfDay < NightUntil
+            : timeOfDay >= NightFrom && timeOfDay < NightUntil;
 
     // Start
     public int StartWood { get; private init; }
@@ -65,6 +76,8 @@ public sealed class Balance
         Positive(d.Heater.RadiusTiles, "heater.radius_tiles");
         Positive(d.Ai.SearchMaxNodes, "ai.search_max_nodes");
         Positive(d.Ai.SearchNodesPerTick, "ai.search_nodes_per_tick");
+        Fraction(d.Schedule.NightFrom, "schedule.night_from");
+        Fraction(d.Schedule.NightUntil, "schedule.night_until");
         if (d.Terrain.LapseRatePerLevel < 0) errors.Add("terrain.lapse_rate_per_level must be >= 0");
         if (d.Climate.MinTemperature > d.Climate.StartTemperature)
             errors.Add("climate.min_temperature must be <= climate.start_temperature");
@@ -92,6 +105,7 @@ public sealed class Balance
 
             HeatRadius = d.Heater.RadiusTiles,
             HeaterBurnPerDegreeTick = d.Heater.WoodPerDegreePerDay / Math.Max(1, ticksPerDay),
+            HeaterBuildingBonus = d.Heater.BuildingBonus,
 
             MoveSpeedTilesPerTick = d.Work.MoveSpeedTilesPerSecond / tps,
             GatherTicks = Seconds(d.Work.GatherSeconds),
@@ -104,6 +118,9 @@ public sealed class Balance
             IdleCooldownTicks = Seconds(d.Ai.IdleCooldownSeconds),
             FailedPathCooldownTicks = Seconds(d.Ai.FailedPathCooldownSeconds),
             ExhaustedSearchMemoTicks = Seconds(d.Ai.ExhaustedSearchMemoSeconds),
+
+            NightFrom = d.Schedule.NightFrom,
+            NightUntil = d.Schedule.NightUntil,
 
             StartWood = d.Start.Wood,
             StartFood = d.Start.Food,

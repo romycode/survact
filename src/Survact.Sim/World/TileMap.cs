@@ -22,6 +22,9 @@ public sealed class TileMap
     internal readonly bool[] Reserved;
     internal readonly byte[] Levels;
 
+    /// <summary>Building id + 1 occupying each tile (0 = free). Derived from Buildings; not saved.</summary>
+    internal readonly int[] Occupant;
+
     /// <summary>Incremented whenever any tile in the chunk changes. Read by renderers.</summary>
     public readonly int[] ChunkVersion;
 
@@ -44,6 +47,7 @@ public sealed class TileMap
         Amount = new ushort[width * height];
         Reserved = new bool[width * height];
         Levels = new byte[width * height];
+        Occupant = new int[width * height];
         ChunkVersion = new int[ChunksX * ChunksY];
     }
 
@@ -71,12 +75,26 @@ public sealed class TileMap
         TouchChunk(index);
     }
 
+    /// <summary>Building id on this tile, or -1.</summary>
+    public int BuildingAt(int index) => Occupant[index] - 1;
+
+    internal void SetOccupant(int index, int buildingId)
+    {
+        int value = buildingId + 1;
+        if (Occupant[index] == value) return;
+        Occupant[index] = value;
+        WalkabilityVersion++;
+    }
+
     /// <summary>
-    /// Can a walker move from one tile to a 4-adjacent one? The target must be walkable and at most
-    /// one level up or down: two or more levels is a cliff. Symmetric, so regions stay well defined.
+    /// Can a walker move from one tile to a 4-adjacent one? The target must be walkable terrain, free
+    /// of buildings, and at most one level up or down (two or more is a cliff).
+    /// Buildings only block ENTERING: a colonist caught on a tile when a building is placed can still
+    /// walk off it, and no path ever goes through one.
     /// </summary>
     public bool CanStep(int from, int to) =>
-        Rules.Walkable(Tiles[to]) && Rules.Walkable(Tiles[from]) && Math.Abs(Levels[to] - Levels[from]) <= 1;
+        Occupant[to] == 0 && Rules.Walkable(Tiles[to]) && Rules.Walkable(Tiles[from])
+        && Math.Abs(Levels[to] - Levels[from]) <= 1;
 
     /// <summary>Cost of a step (only meaningful when CanStep): terrain cost plus climbing up or down.</summary>
     public int StepCost(int from, int to)

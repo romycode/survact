@@ -26,6 +26,8 @@ dotnet run -c Release --project tests/Survact.Sim.Tests -- replay   # filtrar po
 | Mover cámara | WASD / flechas · botón central arrastra |
 | Rotar cámara | Q / E (en vista oblicua: giros de 90°) |
 | Zoom | rueda · `=` / `-` |
+| Construir tienda · cabaña | Z · X (o la barra inferior) · clic coloca · clic derecho/Esc termina |
+| Cancelar una obra | Supr con el ratón encima (devuelve la madera) |
 | Pausa · velocidad x1/x3/x10 | Espacio · 1 / 2 / 3 |
 | Guardar · cargar | F5 · F9 |
 | Mundo nuevo | Ctrl+N |
@@ -41,9 +43,11 @@ src/Survact.Sim/            Simulación. C# puro: sin Godot, sin paquetes NuGet.
   Simulation.cs             Step() a 30 Hz fijo. Aplica comandos y luego sistemas, en orden fijo.
   Data/                     Carga y validación de game/data/*.json → Balance "horneado" por tick.
   Commands/                 Command (entrada única al sim), CommandProcessor (validación), Replay.
+  Buildings/                BuildingStore (ids estables), BuildRules (colocación con códigos de error).
   World/                    TileMap (+ TileTable desde datos), WorldGen determinista.
   Entities/Colonists.cs     Struct-of-arrays. Borrado swap-remove (índices NO estables).
-  Systems/                  Climate, Heater, Needs, Think, Movement, Work, Death.
+  Systems/                  Climate, Heater, Needs, Think, Movement, Work, Construction, Death.
+                            Jobs: el único sitio que libera reservas, madera en tránsito y plazas.
   Pathfinding/              A*/Dijkstra sin allocs, Regions (alcanzabilidad O(1)), FlowField.
   Persistence/              SaveGame (binario versionado) + StateHasher.
 tests/Survact.Sim.Tests/    Runner de consola contra los datos reales del juego. Código 1 si falla.
@@ -77,6 +81,20 @@ cuesta extra (`terrain.climb_*_cost`); **dos niveles o más es un acantilado inf
 respetan el A*, las regiones y el flow field (hay test). Hace más frío arriba:
 `terrain.lapse_rate_per_level` grados por nivel sobre la temperatura del valle.
 
+## Edificios y refugio
+
+Definidos en `balance.json → buildings` (tamaño, coste, segundos de obra, constructores máximos,
+plazas y aislamiento). Colocar crea una **obra**: bloquea su huella, los colonos **acarrean la
+madera** desde el almacén y luego **la construyen**. La entrada es la casilla frente al lado sur.
+
+De noche (`schedule`) los colonos buscan una plaza libre en un refugio. Dentro sienten la
+temperatura exterior + el aislamiento del edificio + `heater.building_bonus` si el edificio está
+dentro del radio del calefactor encendido: construir cerca del fuego compensa, pero el sitio es
+limitado. Quien se congela en un refugio malo sale a calentarse al fuego.
+
+Prioridades de un colono libre: comer → refugio (de noche) → calentarse → obra (acarrear, construir)
+→ recolectar. Los constructores paran para comer o calentarse.
+
 ## Convenciones (no romper)
 
 1. **El sim no conoce Godot.** Si `Survact.Sim` necesita `using Godot;`, el diseño está mal.
@@ -105,6 +123,7 @@ respetan el A*, las regiones y el flow field (hay test). Hace más frío arriba:
 | `log` | log de comandos de la sesión |
 | `camera perspective\|oblique` · `pitch <20-85>` | perspectiva (por defecto) u oblicua ortográfica tipo Factorio · inclinación de la vista oblicua |
 | `pixel <1-6>` · `retro [on\|off]` | escala de render 3D (1 = nativa, por defecto) · filtro posterizado (apagado por defecto) |
+| `build <tipo> <x> <y>` · `cancel <id>` · `buildings` | colocar obra · cancelar obra · listar edificios |
 | `seed` · `new [seed]` · `save` · `load` · `overlay` · `clear` | |
 
 El **overlay F3** muestra el coste por sistema, estadísticas de pathfinding y todo lo que el sim sabe del tile bajo el ratón (tipo, cantidad, reserva, región, distancia al almacén).
