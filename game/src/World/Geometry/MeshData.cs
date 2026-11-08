@@ -16,13 +16,16 @@ public sealed class MeshData
     public int VertexCount => Positions.Count;
 
     public void Triangle(Vector3 a, Vector3 b, Vector3 c, Vector4 color, Vector3? outwardHint = null)
+        => Triangle(a, b, c, color, color, color, outwardHint);
+
+    public void Triangle(Vector3 a, Vector3 b, Vector3 c, Vector4 ca, Vector4 cb, Vector4 cc, Vector3? outwardHint = null)
     {
         var n = Vector3.Normalize(Vector3.Cross(b - a, c - a));
         if (float.IsNaN(n.X)) return; // degenerate
         if (outwardHint is { } hint && Vector3.Dot(n, hint) < 0) n = -n;
-        Add(a, n, color);
-        Add(b, n, color);
-        Add(c, n, color);
+        Add(a, n, ca);
+        Add(b, n, cb);
+        Add(c, n, cc);
     }
 
     /// <summary>Quad a-b-c-d (any winding); the normal is forced to point along <paramref name="outward"/>.</summary>
@@ -57,6 +60,7 @@ public static class SurfaceKind
     public const float Ground = 1.0f;
     public const float Foliage = 0.66f;
     public const float Water = 0.33f;
+    public const float RockFace = 0.12f;
     public const float Plain = 0.0f;
 
     public static Vector4 Rgb(float r, float g, float b, float kind) => new(r, g, b, kind);
