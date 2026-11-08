@@ -28,7 +28,26 @@ public partial class HeaterView : Node3D
         var caldera = GetNode<Node3D>("Caldera");
         _mouth = (GeometryInstance3D)caldera.FindChild("Mouth", recursive: true, owned: false);
         _ember = (GeometryInstance3D)caldera.FindChild("Ember", recursive: true, owned: false);
+        ApplyMetalFinish((MeshInstance3D)caldera.FindChild("Body", recursive: true, owned: false));
         _ring = GetNode<GeometryInstance3D>("HeatRing");
+    }
+
+    private static void ApplyMetalFinish(MeshInstance3D body)
+    {
+        var shader = GD.Load<Shader>("res://shaders/heater_metal.gdshader");
+        for (int i = 0; i < body.Mesh.GetSurfaceCount(); i++)
+        {
+            if (body.Mesh.SurfaceGetMaterial(i) is not StandardMaterial3D metal ||
+                metal.ResourceName.ToString() is not ("Iron" or "IronEdge" or "Copper" or "Brass"))
+                continue;
+
+            var finish = new ShaderMaterial { Shader = shader };
+            finish.SetShaderParameter("metal_color", metal.AlbedoColor);
+            finish.SetShaderParameter("metalness", metal.Metallic);
+            finish.SetShaderParameter("base_roughness", metal.Roughness);
+            finish.SetShaderParameter("copper", metal.ResourceName == "Copper");
+            body.SetSurfaceOverrideMaterial(i, finish);
+        }
     }
 
     public void Bind(Simulation sim)

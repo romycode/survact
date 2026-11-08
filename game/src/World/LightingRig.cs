@@ -63,9 +63,9 @@ public partial class LightingRig : Node3D
         var sky = NightSky.Lerp(DaySky, day);
         _env.BackgroundColor = sky;
         _env.FogLightColor = sky.Lerp(new Color(0.85f, 0.88f, 0.94f), frost * 0.5f * day);
-        _env.FogDensity = (0.0008f + frost * 0.0035f) * FogScale;
+        _env.FogDensity = (0.0006f + frost * 0.0015f) * FogScale;
         _env.AmbientLightColor = NightAmbient.Lerp(DayAmbient, day);
-        _env.AmbientLightEnergy = 0.48f + 0.27f * day;
+        _env.AmbientLightEnergy = 0.48f + 0.12f * day;
 
         RenderingServer.GlobalShaderParameterSet(FrostGlobal, frost);
     }
