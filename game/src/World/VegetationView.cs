@@ -12,22 +12,29 @@ namespace Survact.Game.World;
 /// </summary>
 public partial class VegetationView : Node3D
 {
-    private static readonly (Tile Tile, Func<MeshData> Model)[] Species =
+    private static readonly (Tile Tile, string File)[] Species =
     [
-        (Tile.Tree, LowPoly.Pine),
-        (Tile.Bush, LowPoly.Bush),
-        (Tile.Rock, LowPoly.Boulder),
+        (Tile.Tree, "Survact-pino-v01.glb"),
+        (Tile.Bush, "Survact-arbusto-bayas-v01.glb"),
+        (Tile.Rock, "Survact-penasco-v01.glb"),
     ];
 
     private Simulation? _sim;
-    private ArrayMesh[] _meshes = [];
+    private Mesh[] _meshes = [];
     private MultiMeshInstance3D[,] _instances = new MultiMeshInstance3D[0, 0];
     private int[] _versions = [];
     private readonly List<Scatter.Instance> _scratch = [];
 
     public override void _Ready()
     {
-        _meshes = Species.Select(s => MeshConvert.ToArrayMesh(s.Model())).ToArray();
+        _meshes = new Mesh[Species.Length];
+        for (int i = 0; i < Species.Length; i++)
+        {
+            var species = Species[i];
+            var mesh = VerticalSliceArt.LoadMesh(species.File);
+            mesh.SurfaceSetMaterial(0, MeshConvert.LowPolyMaterial);
+            _meshes[i] = mesh;
+        }
     }
 
     public void Bind(Simulation sim)

@@ -25,8 +25,9 @@ public partial class HeaterView : Node3D
     public override void _Ready()
     {
         _fireLight = GetNode<OmniLight3D>("FireLight");
-        _mouth = GetNode<GeometryInstance3D>("Mouth");
-        _ember = GetNode<GeometryInstance3D>("Ember");
+        var caldera = GetNode<Node3D>("Caldera");
+        _mouth = (GeometryInstance3D)caldera.FindChild("Mouth", recursive: true, owned: false);
+        _ember = (GeometryInstance3D)caldera.FindChild("Ember", recursive: true, owned: false);
         _ring = GetNode<GeometryInstance3D>("HeatRing");
     }
 

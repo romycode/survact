@@ -16,7 +16,7 @@ public partial class BuildingView : Node3D
     private sealed class Entry
     {
         public required Node3D Root;
-        public required MeshInstance3D Model;
+        public required Node3D Model;
         public required MeshInstance3D Foundation;
         public required MeshInstance3D Logs;
         public MeshInstance3D? Window;
@@ -26,8 +26,7 @@ public partial class BuildingView : Node3D
 
     private Simulation? _sim;
     private readonly List<Entry?> _entries = [];
-    private readonly Dictionary<int, (ArrayMesh Model, ArrayMesh? Window)> _meshes = [];
-    private ArrayMesh? _logs;
+    private Mesh? _logs;
     private int _version = -1;
 
     public void Bind(Simulation sim)
@@ -105,22 +104,16 @@ public partial class BuildingView : Node3D
     {
         ref var b = ref _sim!.Buildings[id];
         var type = _sim.Data.Buildings[b.Type];
-        if (!_meshes.TryGetValue(b.Type, out var meshes))
-        {
-            var window = BuildingModels.WindowFor(type.Name);
-            meshes = (MeshConvert.ToArrayMesh(BuildingModels.For(type.Name, type.Width, type.Height)),
-                      window is null ? null : MeshConvert.ToArrayMesh(window));
-            _meshes[b.Type] = meshes;
-        }
-        _logs ??= MeshConvert.ToArrayMesh(LowPoly.LogPile());
+        _logs ??= VerticalSliceArt.LoadMesh("Survact-madera-entregada-v01.glb");
 
         float ground = TerrainMesher.SurfaceAt(_sim.Map, b.X + type.Width / 2f, b.Y + type.Height / 2f);
         var root = new Node3D { Name = $"Building{id}", Position = new Vector3(b.X, ground, b.Y) };
-        var model = new MeshInstance3D { Name = "Model", Mesh = meshes.Model };
+        var model = VerticalSliceArt.Shelter(type.Name, type.Width, type.Height);
+        model.Name = "Model";
         var foundation = new MeshInstance3D
         {
             Name = "Foundation",
-            Mesh = MeshConvert.ToArrayMesh(LowPoly.Foundation(type.Width, type.Height)),
+            Mesh = VerticalSliceArt.Foundation(type.Width, type.Height),
         };
         var logs = new MeshInstance3D
         {
@@ -132,24 +125,16 @@ public partial class BuildingView : Node3D
         root.AddChild(logs);
 
         var entry = new Entry { Root = root, Model = model, Foundation = foundation, Logs = logs, Stage = (BuildingStage)255 };
-        if (meshes.Window is not null)
+        if (model.FindChild("WindowLit", recursive: true, owned: false) is MeshInstance3D window)
         {
-            entry.Window = new MeshInstance3D
-            {
-                Name = "Window", Mesh = meshes.Window, Visible = false, CastShadow = GeometryInstance3D.ShadowCastingSetting.Off,
-                MaterialOverride = new StandardMaterial3D
-                {
-                    ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
-                    AlbedoColor = new Color(1f, 0.8f, 0.45f),
-                    EmissionEnabled = true, Emission = new Color(1f, 0.7f, 0.35f), EmissionEnergyMultiplier = 2f,
-                },
-            };
+            window.Visible = false;
+            window.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
+            entry.Window = window;
             entry.Light = new OmniLight3D
             {
                 Name = "Light", Visible = false, LightColor = new Color(1f, 0.7f, 0.4f), LightEnergy = 0.9f,
-                OmniRange = 3.2f, Position = new Vector3(type.Width / 2f, 0.6f, type.Height + 0.6f),
+                OmniRange = 3.2f, Position = new Vector3(0.61f, 0.71f, 2.1f),
             };
-            root.AddChild(entry.Window);
             root.AddChild(entry.Light);
         }
         AddChild(root);
