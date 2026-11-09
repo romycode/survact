@@ -19,6 +19,14 @@ uniform vec3 ice_color : source_color = vec3(0.58, 0.71, 0.82);
 uniform vec3 emission_color : source_color = vec3(0.0);
 uniform float emission_energy = 0.0;
 
+// Holographic look: opaque geometry, no costly transparency or extra lights.
+uniform bool holographic_enabled = true;
+uniform vec3 hologram_cyan : source_color = vec3(0.02, 0.68, 0.95);
+uniform vec3 hologram_amber : source_color = vec3(1.0, 0.35, 0.07);
+uniform float hologram_grid_scale = 1.0;
+uniform float hologram_grid_width = 0.025;
+uniform float hologram_energy = 0.6;
+
 varying vec3 world_pos;
 varying vec3 world_normal;
 
@@ -68,7 +76,22 @@ void fragment() {
 	// than undersides. Makes form readable from any angle, independent of the sun.
 	col *= mix(0.72, 1.0, clamp(world_normal.y * 0.5 + 0.5, 0.0, 1.0));
 
+	if (holographic_enabled) {
+		// Ground grid follows world coordinates; snow stays visible above it.
+		vec2 grid_uv = world_pos.xz * hologram_grid_scale;
+		vec2 cell = abs(fract(grid_uv) - 0.5);
+		float line = 1.0 - smoothstep(hologram_grid_width, hologram_grid_width + max(fwidth(grid_uv.x), fwidth(grid_uv.y)), 0.5 - max(cell.x, cell.y));
+		float ground = step(0.9, kind) * smoothstep(0.4, 0.8, world_normal.y);
+		// Silhouette highlights on structures, without transparent overdraw.
+		float rim = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 3.0);
+		vec3 accent = mix(hologram_cyan, hologram_amber, step(0.75, emission_energy));
+		float snow = ground * frost;
+		col = mix(col, col * vec3(0.16, 0.29, 0.40), 0.48 * (1.0 - snow));
+		EMISSION = emission_color * emission_energy + accent * hologram_energy * (ground * line * 0.6 + rim * (1.0 - ground) * 0.35);
+	} else {
+		EMISSION = emission_color * emission_energy;
+	}
+
 	ALBEDO = col;
 	ROUGHNESS = 1.0;
-	EMISSION = emission_color * emission_energy;
 }
