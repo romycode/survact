@@ -46,7 +46,7 @@ float value_noise(vec2 p) {
 // a little per-tile jitter keeps the edges ragged. 0 frost = none, 0.85 = everything.
 bool tile_has_snow(vec2 tile, float frost) {
 	float coverage = value_noise(tile * 0.17) * 0.72 + hash(tile) * 0.28;
-	return coverage < frost / 0.85 * 1.1 - 0.05;
+	return frost > 0.0 && coverage < frost / 0.85 * 1.1 - 0.05;
 }
 
 void vertex() {
