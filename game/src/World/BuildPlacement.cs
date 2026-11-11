@@ -26,11 +26,10 @@ public partial class BuildPlacement : Node3D
 
     private Simulation? _sim;
     private CameraRig _camera = null!;
-    private MeshInstance3D _ghost = null!;
+    private Node3D _ghost = null!;
     private MeshInstance3D _footprint = null!;
     private MeshInstance3D _entrance = null!;
     private StandardMaterial3D _material = null!;
-    private readonly Dictionary<int, ArrayMesh> _models = [];
 
     /// <summary>Selected building type, or -1 when not in build mode.</summary>
     public int Type { get; private set; } = -1;
@@ -49,7 +48,8 @@ public partial class BuildPlacement : Node3D
             ShadingMode = BaseMaterial3D.ShadingModeEnum.Unshaded,
             AlbedoColor = Valid,
         };
-        _ghost = NewPart("Ghost");
+        _ghost = new Node3D { Name = "Ghost" };
+        AddChild(_ghost);
         _footprint = NewPart("Footprint");
         _entrance = NewPart("Entrance");
         _entrance.Mesh = new BoxMesh { Size = new Vector3(0.36f, 0.08f, 0.36f) };
@@ -60,7 +60,6 @@ public partial class BuildPlacement : Node3D
     {
         _sim = sim;
         _camera = camera;
-        _models.Clear();
         SetTool(-1);
     }
 
@@ -70,12 +69,19 @@ public partial class BuildPlacement : Node3D
         Type = type >= 0 && type < _sim.Data.Buildings.Count ? type : -1;
         Visible = Type >= 0;
         Error = PlacementError.None;
+        foreach (var child in _ghost.GetChildren())
+        {
+            _ghost.RemoveChild(child);
+            child.QueueFree();
+        }
         if (Type >= 0)
         {
             var t = _sim.Data.Buildings[Type];
-            if (!_models.TryGetValue(Type, out var mesh))
-                _models[Type] = mesh = MeshConvert.ToArrayMesh(BuildingModels.For(t.Name, t.Width, t.Height));
-            _ghost.Mesh = mesh;
+            var model = VerticalSliceArt.Shelter(t.Name, t.Width, t.Height);
+            if (model is MeshInstance3D singleMesh) StyleGhost(singleMesh);
+            foreach (var child in model.FindChildren("*", "MeshInstance3D", recursive: true, owned: false))
+                StyleGhost((MeshInstance3D)child);
+            _ghost.AddChild(model);
             _footprint.Mesh = new BoxMesh { Size = new Vector3(t.Width, 0.06f, t.Height) };
         }
         EmitSignal(SignalName.ToolChanged, Type);
@@ -147,6 +153,13 @@ public partial class BuildPlacement : Node3D
         if (!_sim!.Map.InBounds(x, y)) return null;
         int id = _sim.Map.BuildingAt(_sim.Map.Index(x, y));
         return id >= 0 && _sim.Buildings[id].Stage == BuildingStage.Site ? id : null;
+    }
+
+    private void StyleGhost(MeshInstance3D mesh)
+    {
+        mesh.Visible = mesh.Name != "WindowLit";
+        mesh.MaterialOverride = _material;
+        mesh.CastShadow = GeometryInstance3D.ShadowCastingSetting.Off;
     }
 
     private MeshInstance3D NewPart(string name)

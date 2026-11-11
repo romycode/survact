@@ -23,7 +23,7 @@ public static class Palette
             ColonistState.Gathering => Gathering,
             ColonistState.Eating => Eating,
             ColonistState.Warming => Warming,
-            ColonistState.Walking when carry > 0 && job == Job.Wood => CarryWood,
+            ColonistState.Walking when carry > 0 && (job is Job.Wood or Job.Haul) => CarryWood,
             ColonistState.Walking when carry > 0 => CarryFood,
             ColonistState.Walking => Walking,
             _ => Idle,
